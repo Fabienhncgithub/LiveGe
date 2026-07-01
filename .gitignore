@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+bin/
+obj/
+
+# Local databases
+*.db
+*.db-shm
+*.db-wal
+
+# TypeScript
+*.tsbuildinfo
+
+# Environment and local settings
+.env
+.env.*
+!.env.example
+*.user
+*.suo
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
