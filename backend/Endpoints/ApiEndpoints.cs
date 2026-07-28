@@ -3,6 +3,7 @@ using FrontiereLiveGe.Api.Dtos;
 using FrontiereLiveGe.Api.Enums;
 using FrontiereLiveGe.Api.Extensions;
 using FrontiereLiveGe.Api.Models;
+using FrontiereLiveGe.Api.Security;
 using FrontiereLiveGe.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Net.Http.Headers;
@@ -13,7 +14,11 @@ public static class ApiEndpoints
 {
     public static IEndpointRouteBuilder MapApiEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api");
+        var group = app.MapGroup("/api")
+            .RequireRateLimiting("public");
+        var admin = app.MapGroup("/api/admin")
+            .RequireAuthorization(AdminApiKeyDefaults.AuthorizationPolicy)
+            .RequireRateLimiting("admin");
 
         group.MapGet("/border-points", async (AppDbContext db, CancellationToken ct) =>
         {
@@ -108,12 +113,15 @@ public static class ApiEndpoints
             return Results.Ok(snapshots.Select(x => x.ToDto()));
         });
 
-        group.MapGet("/settings", async (AppDbContext db, CancellationToken ct) =>
+        admin.MapGet("/settings", async (AppDbContext db, CancellationToken ct) =>
         {
-            var settings = await db.BotSettings.AsNoTracking().FirstOrDefaultAsync(ct)
+            var settings = await db.BotSettings
+                .AsNoTracking()
+                .OrderBy(x => x.Id)
+                .FirstOrDefaultAsync(ct)
                 ?? new BotSettings
                 {
-                    PostingEnabled = true,
+                    PostingEnabled = false,
                     MinMinutesBetweenPosts = 60,
                     RisingThresholdMinutes = 10,
                     CriticalDelayMinutes = 30
@@ -122,14 +130,16 @@ public static class ApiEndpoints
             return Results.Ok(settings.ToDto());
         });
 
-        group.MapPut("/settings", async (UpdateBotSettingsDto input, AppDbContext db, CancellationToken ct) =>
+        admin.MapPut("/settings", async (UpdateBotSettingsDto input, AppDbContext db, CancellationToken ct) =>
         {
             if (input.MinMinutesBetweenPosts < 1 || input.RisingThresholdMinutes < 0 || input.CriticalDelayMinutes < 1)
             {
                 return Results.BadRequest(new { error = "Invalid settings values." });
             }
 
-            var settings = await db.BotSettings.FirstOrDefaultAsync(ct);
+            var settings = await db.BotSettings
+                .OrderBy(x => x.Id)
+                .FirstOrDefaultAsync(ct);
             if (settings is null)
             {
                 settings = new BotSettings();
@@ -146,7 +156,7 @@ public static class ApiEndpoints
             return Results.Ok(settings.ToDto());
         });
 
-        group.MapPost("/run-once", async (IBorderRadarRunner runner, CancellationToken ct) =>
+        admin.MapPost("/run-once", async (IBorderRadarRunner runner, CancellationToken ct) =>
         {
             var result = await runner.RunAsync(ct);
             return Results.Ok(new RunSummaryDto
@@ -158,7 +168,7 @@ public static class ApiEndpoints
             });
         });
 
-        group.MapPost("/publish-test", async (AppDbContext db, IPostPublisher publisher, CancellationToken ct) =>
+        admin.MapPost("/publish-test", async (AppDbContext db, IPostPublisher publisher, CancellationToken ct) =>
         {
             var point = await db.BorderPoints.AsNoTracking().OrderBy(x => x.Id).FirstOrDefaultAsync(ct);
             var label = point?.Name ?? "Frontière";
@@ -178,10 +188,10 @@ public static class ApiEndpoints
             };
 
             await publisher.PublishAsync(alert, message, ct);
-            return Results.Ok(new { posted = true, message });
+            return Results.Ok(new { posted = publisher.IsLive, simulated = !publisher.IsLive, message });
         });
 
-        group.MapGet("/x/me", async (IHttpClientFactory httpClientFactory, IXTokenService tokenService, CancellationToken ct) =>
+        admin.MapGet("/x/me", async (IHttpClientFactory httpClientFactory, IXTokenService tokenService, CancellationToken ct) =>
         {
             try
             {
@@ -202,7 +212,7 @@ public static class ApiEndpoints
                 if (!ok && status == 401)
                 {
                     // Try a refresh once if the token is expired.
-                    var refreshed = await tokenService.TryRefreshAsync(ct);
+                    var refreshed = await tokenService.TryRefreshAsync(ct, force: true);
                     if (refreshed)
                     {
                         token = await tokenService.GetAccessTokenAsync(ct);
@@ -214,7 +224,7 @@ public static class ApiEndpoints
                 {
                     return Results.Problem(
                         title: "X API error",
-                        detail: body,
+                        detail: "The X API request failed.",
                         statusCode: status);
                 }
 

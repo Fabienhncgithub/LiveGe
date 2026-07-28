@@ -11,6 +11,7 @@ public class BorderRadarRunner : IBorderRadarRunner
     private readonly ITrendAnalyzer _trendAnalyzer;
     private readonly IAlertEngine _alertEngine;
     private readonly IPostPublisher _postPublisher;
+    private readonly RadarRunGate _runGate;
     private readonly ILogger<BorderRadarRunner> _logger;
 
     public BorderRadarRunner(
@@ -19,6 +20,7 @@ public class BorderRadarRunner : IBorderRadarRunner
         ITrendAnalyzer trendAnalyzer,
         IAlertEngine alertEngine,
         IPostPublisher postPublisher,
+        RadarRunGate runGate,
         ILogger<BorderRadarRunner> logger)
     {
         _db = db;
@@ -26,11 +28,14 @@ public class BorderRadarRunner : IBorderRadarRunner
         _trendAnalyzer = trendAnalyzer;
         _alertEngine = alertEngine;
         _postPublisher = postPublisher;
+        _runGate = runGate;
         _logger = logger;
     }
 
     public async Task<BorderRadarRunResult> RunAsync(CancellationToken ct)
     {
+        using var runLease = await _runGate.EnterAsync(ct);
+
         var result = new BorderRadarRunResult
         {
             RanAtUtc = DateTime.UtcNow
@@ -90,7 +95,9 @@ public class BorderRadarRunner : IBorderRadarRunner
 
     private async Task<BotSettings> GetOrCreateSettingsAsync(CancellationToken ct)
     {
-        var settings = await _db.BotSettings.FirstOrDefaultAsync(ct);
+        var settings = await _db.BotSettings
+            .OrderBy(x => x.Id)
+            .FirstOrDefaultAsync(ct);
         if (settings is not null)
         {
             return settings;
@@ -98,7 +105,7 @@ public class BorderRadarRunner : IBorderRadarRunner
 
         settings = new BotSettings
         {
-            PostingEnabled = true,
+            PostingEnabled = false,
             MinMinutesBetweenPosts = 60,
             RisingThresholdMinutes = 10,
             CriticalDelayMinutes = 30
@@ -141,10 +148,13 @@ public class BorderRadarRunner : IBorderRadarRunner
             }
 
             await _postPublisher.PublishAsync(alert, alert.Message, ct);
-            alert.IsPosted = true;
-            alert.PostedAtUtc = DateTime.UtcNow;
-            lastPostedAt = alert.PostedAtUtc;
-            postedCount++;
+            if (_postPublisher.IsLive)
+            {
+                alert.IsPosted = true;
+                alert.PostedAtUtc = DateTime.UtcNow;
+                lastPostedAt = alert.PostedAtUtc;
+                postedCount++;
+            }
         }
 
         if (postedCount > 0)

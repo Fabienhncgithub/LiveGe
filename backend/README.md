@@ -1,48 +1,41 @@
-# Frontière Live GE — Backend
+# Backend Frontière Live GE
 
-API ASP.NET Core (.NET 10) pour le MVP "Radar Frontalier Genève".
+API ASP.NET Core 10 avec EF Core, SQLite et worker périodique.
 
-## Prérequis
-- .NET SDK 10
+## Sécurité
 
-## Lancer en local
+- Les lectures du dashboard sont publiques.
+- `/api/admin/*` exige l'en-tête `X-Admin-Key`.
+- La clé vient de `Admin:ApiKey`.
+- X est désactivé par défaut.
+- Les réponses administratives utilisent `Cache-Control: no-store`.
+- Les routes publiques et administratives ont des limites de débit distinctes.
+
+Les User Secrets conviennent uniquement au développement. En production, utilisez le
+gestionnaire de secrets de l'hébergeur.
+
+## Base de données
+
+Les migrations sont dans `Data/Migrations`.
+
 ```bash
-dotnet restore
-dotnet run
+dotnet tool restore
+dotnet tool run dotnet-ef database update --project backend --startup-project backend
 ```
 
-L'API écoute par défaut sur `http://localhost:5000` (Kestrel). Le worker tourne toutes les 5 minutes.
+`Database:AdoptLegacySchema` sert uniquement à adopter l'ancienne base locale créée avant
+l'ajout des migrations. Il doit rester à `false` en production.
 
-## Configuration
-`appsettings.json` :
-- `ConnectionStrings:Default` : base SQLite locale
-- `Cors:AllowedOrigins` : origines autorisées (Vite)
-- `BotWorker:IntervalMinutes` : intervalle du worker
+## Configuration principale
 
-## Architecture
-- `Data/` : `AppDbContext` + seed
-- `Models/` : entités EF Core
-- `Dtos/` : DTOs exposés par l'API
-- `Services/` : ingestion, analyse de tendance, moteur d'alertes, publisher
-- `Endpoints/` : routes REST
-
-## FakeTrafficDataProvider
-Le provider simule des données réalistes selon l'heure locale Europe/Zurich :
-- matin 06:30-09:00 : Bardonnex/Perly plus chargés
-- soir 16:30-19:00 : retour plus chargé côté Moillesulaz/Thônex-Vallard
-- week-end : trafic globalement réduit
-
-Remplacez l'implémentation par un provider réel via `ITrafficDataProvider`.
-
-## Publisher X/Twitter
-Le publisher est abstrait via `IPostPublisher`. L'implémentation par défaut utilise OAuth2 (Bearer) via `XPostPublisher`.
-
-Configuration minimale (User Secrets recommandé) :
-```bash
-dotnet user-secrets init
-dotnet user-secrets set "X:ClientId" "CLIENT_ID"
-dotnet user-secrets set "X:AccessToken" "ACCESS_TOKEN"
-dotnet user-secrets set "X:RefreshToken" "REFRESH_TOKEN"
-```
-
-Scopes OAuth2 recommandés : `tweet.read tweet.write users.read offline.access`.
+- `ConnectionStrings:Default`
+- `Database:AdoptLegacySchema`
+- `Cors:AllowedOrigins`
+- `BotWorker:IntervalMinutes`
+- `Admin:ApiKey`
+- `Security:UseHttpsRedirection`
+- `X:Enabled`
+- `X:ClientId`
+- `X:ClientSecret`
+- `X:AccessToken`
+- `X:RefreshToken`

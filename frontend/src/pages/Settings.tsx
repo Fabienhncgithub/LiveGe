@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchSettings, runOnce, updateSettings } from '../api/borderApi'
+import { clearAdminKey, hasAdminKey, setAdminKey } from '../api/http'
 import SettingsForm from '../components/SettingsForm'
 import type { BotSettings } from '../types'
 
@@ -10,8 +11,15 @@ export default function Settings() {
   const [running, setRunning] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [authenticated, setAuthenticated] = useState(hasAdminKey())
+  const [keyInput, setKeyInput] = useState('')
 
   useEffect(() => {
+    if (!authenticated) {
+      setLoading(false)
+      return
+    }
+
     const load = async () => {
       try {
         setError(null)
@@ -19,13 +27,35 @@ export default function Settings() {
         setSettings(data)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erreur inconnue')
+        setAuthenticated(hasAdminKey())
       } finally {
         setLoading(false)
       }
     }
 
     void load()
-  }, [])
+  }, [authenticated])
+
+  const handleLogin = (event: React.FormEvent) => {
+    event.preventDefault()
+    const key = keyInput.trim()
+    if (!key) {
+      return
+    }
+
+    setAdminKey(key)
+    setKeyInput('')
+    setLoading(true)
+    setAuthenticated(true)
+  }
+
+  const handleLogout = () => {
+    clearAdminKey()
+    setSettings(null)
+    setAuthenticated(false)
+    setMessage(null)
+    setError(null)
+  }
 
   const handleSave = async (payload: BotSettings) => {
     try {
@@ -65,10 +95,34 @@ export default function Settings() {
         </div>
       </div>
 
+      {!authenticated && (
+        <form className="settings-form" onSubmit={handleLogin}>
+          <label className="form-row">
+            <span>Clé administrateur</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={keyInput}
+              onChange={(event) => setKeyInput(event.target.value)}
+              required
+            />
+          </label>
+          <p className="settings-hint">La clé reste uniquement dans cette session du navigateur.</p>
+          <button type="submit" className="btn">
+            Déverrouiller
+          </button>
+        </form>
+      )}
+
       {loading ? (
         <p className="empty-state">Chargement...</p>
-      ) : (
+      ) : authenticated ? (
         <>
+          <div className="form-actions">
+            <button type="button" className="btn btn-secondary" onClick={handleLogout}>
+              Verrouiller
+            </button>
+          </div>
           {message && <div className="success-banner">{message}</div>}
           {error && <div className="error-banner">{error}</div>}
           <SettingsForm
@@ -79,7 +133,7 @@ export default function Settings() {
             running={running}
           />
         </>
-      )}
+      ) : null}
     </section>
   )
 }

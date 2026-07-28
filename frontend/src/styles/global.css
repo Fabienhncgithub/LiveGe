@@ -122,75 +122,6 @@ a {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
-.event-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 20px 22px;
-  border: 1px solid #f7c164;
-  border-left: 6px solid var(--accent);
-  border-radius: 8px;
-  background: #fffbeb;
-}
-
-.event-banner__eyebrow {
-  display: block;
-  margin-bottom: 6px;
-  color: #9a5b00;
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.event-banner h2 {
-  margin: 0;
-  font-size: 22px;
-}
-
-.event-banner p {
-  margin: 8px 0 0;
-  color: #5f4b1b;
-  line-height: 1.5;
-}
-
-.event-banner__stats {
-  min-width: 118px;
-  padding: 12px 14px;
-  border-radius: 8px;
-  border: 1px solid #f3d48b;
-  background: #ffffff;
-  text-align: center;
-}
-
-.event-banner__stats span {
-  display: block;
-  font-size: 24px;
-  font-weight: 700;
-  color: #1f2937;
-}
-
-.event-banner__stats small {
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.event-checklist {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.event-checklist span {
-  padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid #d6e4f5;
-  background: #ffffff;
-  color: var(--primary);
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .card {
   background: var(--card-bg);
   border-radius: 16px;
@@ -248,30 +179,6 @@ a {
 .card__footer {
   font-size: 13px;
   color: var(--muted);
-}
-
-.g7-card-note {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #f0f9ff;
-  color: #0b4a6f;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.g7-card-note__label {
-  color: #027a48;
-}
-
-.card__guidance {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
 }
 
 .badge {
@@ -494,15 +401,6 @@ a {
 
   .card__metrics {
     flex-direction: column;
-  }
-
-  .event-banner {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .event-banner__stats {
-    width: 100%;
   }
 
   .form-row {

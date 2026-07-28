@@ -1,4 +1,4 @@
-import { getJson, postJson, putJson } from './http'
+import { getAdminJson, getJson, postAdminJson, putAdminJson } from './http'
 import type {
   AlertEvent,
   BorderPoint,
@@ -17,9 +17,9 @@ export const fetchAlerts = () => getJson<AlertEvent[]>('/api/alerts')
 export const fetchHistory = (borderPointId: number) =>
   getJson<TrafficSnapshot[]>(`/api/history/${borderPointId}`)
 
-export const fetchSettings = () => getJson<BotSettings>('/api/settings')
+export const fetchSettings = () => getAdminJson<BotSettings>('/api/admin/settings')
 
 export const updateSettings = (payload: BotSettings) =>
-  putJson<BotSettings>('/api/settings', payload)
+  putAdminJson<BotSettings>('/api/admin/settings', payload)
 
-export const runOnce = () => postJson<RunSummary>('/api/run-once', {})
+export const runOnce = () => postAdminJson<RunSummary>('/api/admin/run-once', {})

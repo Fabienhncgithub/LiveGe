@@ -3,5 +3,5 @@ namespace FrontiereLiveGe.Api.Services;
 public interface IXTokenService
 {
     Task<string> GetAccessTokenAsync(CancellationToken ct);
-    Task<bool> TryRefreshAsync(CancellationToken ct);
+    Task<bool> TryRefreshAsync(CancellationToken ct, bool force = false);
 }

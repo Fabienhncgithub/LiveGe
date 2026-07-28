@@ -10,33 +10,29 @@ namespace FrontiereLiveGe.Api.Data;
 public class DbInitializer
 {
     private readonly AppDbContext _db;
-    private readonly ILogger<DbInitializer> _logger;
+    private readonly IConfiguration _configuration;
 
-    public DbInitializer(AppDbContext db, ILogger<DbInitializer> logger)
+    public DbInitializer(AppDbContext db, IConfiguration configuration)
     {
         _db = db;
-        _logger = logger;
+        _configuration = configuration;
     }
 
     public async Task InitializeAsync()
     {
-        try
+        var migrations = _db.Database.GetService<IMigrationsAssembly>().Migrations;
+        if (migrations.Count == 0)
         {
-            var migrations = _db.Database.GetService<IMigrationsAssembly>().Migrations;
-            if (migrations.Count == 0)
-            {
-                // When no migrations exist yet, fall back to EnsureCreated for a clean local setup.
-                await _db.Database.EnsureCreatedAsync();
-            }
-            else
-            {
-                await _db.Database.MigrateAsync();
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Migration failed, falling back to EnsureCreated.");
             await _db.Database.EnsureCreatedAsync();
+        }
+        else
+        {
+            if (_configuration.GetValue<bool>("Database:AdoptLegacySchema"))
+            {
+                await AdoptLegacySchemaAsync(migrations.Keys.OrderBy(x => x).First());
+            }
+
+            await _db.Database.MigrateAsync();
         }
 
         await SeedAsync();
@@ -44,22 +40,16 @@ public class DbInitializer
 
     private async Task SeedAsync()
     {
-        // Guarantee tables exist even when no migrations are present.
-        await _db.Database.EnsureCreatedAsync();
-        if (!await TableExistsAsync("BorderPoints"))
-        {
-            await _db.Database.EnsureDeletedAsync();
-            await _db.Database.EnsureCreatedAsync();
-        }
-
         await UpsertBorderPointsAsync();
 
-        var settings = await _db.BotSettings.FirstOrDefaultAsync();
+        var settings = await _db.BotSettings
+            .OrderBy(x => x.Id)
+            .FirstOrDefaultAsync();
         if (settings is null)
         {
             _db.BotSettings.Add(new BotSettings
             {
-                PostingEnabled = true,
+                PostingEnabled = false,
                 MinMinutesBetweenPosts = 60,
                 RisingThresholdMinutes = 10,
                 CriticalDelayMinutes = 30
@@ -136,25 +126,83 @@ public class DbInitializer
         }
     }
 
-    private async Task<bool> TableExistsAsync(string tableName)
+    private async Task AdoptLegacySchemaAsync(string initialMigrationId)
     {
         var connection = _db.Database.GetDbConnection();
         await connection.OpenAsync();
         try
         {
-            await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=$name;";
-            var nameParam = command.CreateParameter();
-            nameParam.ParameterName = "$name";
-            nameParam.Value = tableName;
-            command.Parameters.Add(nameParam);
+            var expectedTables = new[] { "BorderPoints", "TrafficSnapshots", "AlertEvents", "BotSettings" };
+            foreach (var table in expectedTables)
+            {
+                if (!await TableExistsAsync(connection, table))
+                {
+                    return;
+                }
+            }
 
-            var result = await command.ExecuteScalarAsync();
-            return Convert.ToInt32(result) > 0;
+            if (await MigrationHistoryHasRowsAsync(connection))
+            {
+                return;
+            }
+
+            await using var createCommand = connection.CreateCommand();
+            createCommand.CommandText =
+                """
+                CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+                    "MigrationId" TEXT NOT NULL CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY,
+                    "ProductVersion" TEXT NOT NULL
+                );
+                """;
+            await createCommand.ExecuteNonQueryAsync();
+
+            await using var insertCommand = connection.CreateCommand();
+            insertCommand.CommandText =
+                """
+                INSERT OR IGNORE INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+                VALUES ($migrationId, $productVersion);
+                """;
+
+            var migrationParameter = insertCommand.CreateParameter();
+            migrationParameter.ParameterName = "$migrationId";
+            migrationParameter.Value = initialMigrationId;
+            insertCommand.Parameters.Add(migrationParameter);
+
+            var versionParameter = insertCommand.CreateParameter();
+            versionParameter.ParameterName = "$productVersion";
+            versionParameter.Value = ProductInfo.GetVersion();
+            insertCommand.Parameters.Add(versionParameter);
+
+            await insertCommand.ExecuteNonQueryAsync();
         }
         finally
         {
             await connection.CloseAsync();
         }
+    }
+
+    private static async Task<bool> TableExistsAsync(System.Data.Common.DbConnection connection, string tableName)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=$name;";
+
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$name";
+        parameter.Value = tableName;
+        command.Parameters.Add(parameter);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+    }
+
+    private static async Task<bool> MigrationHistoryHasRowsAsync(System.Data.Common.DbConnection connection)
+    {
+        if (!await TableExistsAsync(connection, "__EFMigrationsHistory"))
+        {
+            return false;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """SELECT COUNT(*) FROM "__EFMigrationsHistory";""";
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
     }
 }

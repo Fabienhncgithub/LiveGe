@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/backend/" />
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/backend/">
+    <Project Path="tests/backend/FrontiereLiveGe.Api.Tests.csproj" />
+  </Folder>
+  <Project Path="backend/FrontiereLiveGe.Api.csproj" />
+</Solution>

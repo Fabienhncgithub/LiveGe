@@ -11,6 +11,8 @@ public class FakePostPublisher : IPostPublisher
         _logger = logger;
     }
 
+    public bool IsLive => false;
+
     public Task PublishAsync(AlertEvent alert, string message, CancellationToken ct)
     {
         _logger.LogInformation("[FAKE-PUBLISH] Alert {AlertId}: {Message}", alert.Id, message);

@@ -19,6 +19,8 @@ public class XPostPublisher : IPostPublisher
         _logger = logger;
     }
 
+    public bool IsLive => true;
+
     public async Task PublishAsync(AlertEvent alert, string message, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(message))
@@ -30,9 +32,9 @@ public class XPostPublisher : IPostPublisher
         var token = await _tokenService.GetAccessTokenAsync(ct);
         var result = await TryPublishAsync(message, token, ct);
 
-        if (!result.Success)
+        if (!result.Success && result.StatusCode == HttpStatusCode.Unauthorized)
         {
-            var refreshed = await _tokenService.TryRefreshAsync(ct);
+            var refreshed = await _tokenService.TryRefreshAsync(ct, force: true);
             if (refreshed)
             {
                 token = await _tokenService.GetAccessTokenAsync(ct);
@@ -42,7 +44,7 @@ public class XPostPublisher : IPostPublisher
 
         if (!result.Success)
         {
-            throw new InvalidOperationException($"X post failed after refresh attempt. Status: {result.StatusCode}. Response: {result.Body}");
+            throw new InvalidOperationException($"X post failed with status {result.StatusCode}.");
         }
     }
 
@@ -62,21 +64,20 @@ public class XPostPublisher : IPostPublisher
             return XPostResult.Ok();
         }
 
-        var body = await response.Content.ReadAsStringAsync(ct);
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
-            _logger.LogWarning("X post unauthorized. Token may be expired. Response: {Body}", body);
-            return XPostResult.Failed(response.StatusCode, body);
+            _logger.LogWarning("X post unauthorized. Token may be expired.");
+            return XPostResult.Failed(response.StatusCode);
         }
 
-        _logger.LogWarning("X post failed: {Status} {Body}", response.StatusCode, body);
-        return XPostResult.Failed(response.StatusCode, body);
+        _logger.LogWarning("X post failed with status {Status}.", response.StatusCode);
+        return XPostResult.Failed(response.StatusCode);
     }
 
-    private sealed record XPostResult(bool Success, HttpStatusCode? StatusCode, string Body)
+    private sealed record XPostResult(bool Success, HttpStatusCode? StatusCode)
     {
-        public static XPostResult Ok() => new(true, null, string.Empty);
+        public static XPostResult Ok() => new(true, null);
 
-        public static XPostResult Failed(HttpStatusCode statusCode, string body) => new(false, statusCode, body);
+        public static XPostResult Failed(HttpStatusCode statusCode) => new(false, statusCode);
     }
 }

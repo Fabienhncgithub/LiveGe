@@ -1,5 +1,6 @@
 import StatusBadge from './StatusBadge'
 import type { AlertEvent } from '../types'
+import { parseUtcDate } from '../utils/date'
 
 interface AlertListProps {
   alerts: AlertEvent[]
@@ -27,7 +28,7 @@ export default function AlertList({ alerts }: AlertListProps) {
       {alerts.map((alert) => {
         const severity = severityMap[alert.severity]
         const trend = trendMap[alert.trend]
-        const createdAt = new Date(alert.createdAtUtc).toLocaleString('fr-CH', {
+        const createdAt = parseUtcDate(alert.createdAtUtc).toLocaleString('fr-CH', {
           dateStyle: 'medium',
           timeStyle: 'short'
         })

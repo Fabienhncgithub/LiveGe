@@ -1,6 +1,15 @@
-import { NavLink } from 'react-router-dom'
+interface NavBarProps {
+  currentPath: string
+  onNavigate: (path: string) => void
+}
 
-export default function NavBar() {
+const links = [
+  { path: '/dashboard', label: 'Dashboard' },
+  { path: '/alerts', label: 'Alertes' },
+  { path: '/settings', label: 'Administration' }
+]
+
+export default function NavBar({ currentPath, onNavigate }: NavBarProps) {
   return (
     <header className="navbar">
       <div className="navbar__brand">
@@ -8,18 +17,20 @@ export default function NavBar() {
         <span className="brand-subtitle">Radar Genève</span>
       </div>
       <nav className="navbar__links">
-        <NavLink
-          to="/dashboard"
-          className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
-        >
-          Dashboard
-        </NavLink>
-        <NavLink to="/alerts" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-          Alerts
-        </NavLink>
-        <NavLink to="/settings" className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-          Settings
-        </NavLink>
+        {links.map((link) => (
+          <a
+            key={link.path}
+            href={link.path}
+            className={currentPath === link.path ? 'nav-link active' : 'nav-link'}
+            aria-current={currentPath === link.path ? 'page' : undefined}
+            onClick={(event) => {
+              event.preventDefault()
+              onNavigate(link.path)
+            }}
+          >
+            {link.label}
+          </a>
+        ))}
       </nav>
     </header>
   )

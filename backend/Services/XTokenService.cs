@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 
@@ -41,7 +42,7 @@ public class XTokenService : IXTokenService
         return _accessToken;
     }
 
-    public async Task<bool> TryRefreshAsync(CancellationToken ct)
+    public async Task<bool> TryRefreshAsync(CancellationToken ct, bool force = false)
     {
         if (string.IsNullOrWhiteSpace(_refreshToken))
         {
@@ -52,7 +53,7 @@ public class XTokenService : IXTokenService
         await _lock.WaitAsync(ct);
         try
         {
-            if (!IsExpiringSoon())
+            if (!force && !IsExpiringSoon())
             {
                 return true;
             }
@@ -67,13 +68,23 @@ public class XTokenService : IXTokenService
 
             using var content = new FormUrlEncodedContent(payload);
             content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
+            using var request = new HttpRequestMessage(HttpMethod.Post, "token")
+            {
+                Content = content
+            };
 
-            using var response = await client.PostAsync("token", content, ct);
+            if (!string.IsNullOrWhiteSpace(_options.ClientSecret))
+            {
+                var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_options.ClientId}:{_options.ClientSecret}"));
+                request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
+            }
+
+            using var response = await client.SendAsync(request, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("X token refresh failed: {Status} {Body}", response.StatusCode, body);
+                _logger.LogWarning("X token refresh failed with status {Status}.", response.StatusCode);
                 return false;
             }
 

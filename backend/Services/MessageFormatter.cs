@@ -5,9 +5,6 @@ namespace FrontiereLiveGe.Api.Services;
 
 public class MessageFormatter : IMessageFormatter
 {
-    private static readonly DateTime G7StartUtc = new(2026, 6, 11, 22, 0, 0, DateTimeKind.Utc);
-    private static readonly DateTime G7EndUtc = new(2026, 6, 18, 22, 0, 0, DateTimeKind.Utc);
-
     public string FormatAlert(BorderPoint borderPoint, TrafficSnapshot latest, TrendResult trend)
     {
         var baseMessage = $"\uD83D\uDE97 {borderPoint.Name} \u2192 {latest.EstimatedDelayMinutes} min.";
@@ -36,12 +33,12 @@ public class MessageFormatter : IMessageFormatter
             ? $"{baseMessage} {trendSentence}"
             : $"{baseMessage} {trendSentence} {extra}";
 
-        var hashtags = BuildHashtags(borderPoint.Name, latest.RecordedAtUtc);
+        var hashtags = BuildHashtags(borderPoint.Name);
 
         return hashtags.Count == 0 ? message : $"{message} {string.Join(' ', hashtags)}";
     }
 
-    private static List<string> BuildHashtags(string borderPointName, DateTime recordedAtUtc)
+    private static List<string> BuildHashtags(string borderPointName)
     {
         var tags = new List<string>();
 
@@ -56,11 +53,7 @@ public class MessageFormatter : IMessageFormatter
 
         tags.Add(localTag);
 
-        if (recordedAtUtc >= G7StartUtc && recordedAtUtc <= G7EndUtc)
-        {
-            tags.Add("#G7Evian");
-        }
-        else if (borderPointName is "Bardonnex" or "Perly" or "Moillesulaz" or "Th\u00f4nex-Vallard")
+        if (borderPointName is "Bardonnex" or "Perly" or "Moillesulaz" or "Th\u00f4nex-Vallard")
         {
             tags.Add("#Frontiere");
         }

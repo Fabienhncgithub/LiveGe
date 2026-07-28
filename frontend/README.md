@@ -1,28 +1,28 @@
-# Frontière Live GE — Frontend
+# Frontend Frontière Live GE
 
-Interface React + Vite pour le dashboard "Frontière Live GE".
+Interface React, Vite et TypeScript.
 
-## Prérequis
-- Node.js 18+ (ou 20+)
-- npm/pnpm/yarn
-
-## Lancer en local
-```bash
-npm install
-npm run dev
-```
-
-Par défaut, l'app appelle `http://localhost:5000`. Vous pouvez changer la base API :
+## Installation
 
 ```bash
-cp .env.example .env
+pnpm install --frozen-lockfile
 ```
 
-Puis modifiez `VITE_API_BASE_URL`.
+## Démarrage
 
-## Structure
-- `src/api` : client HTTP et appels API
-- `src/components` : composants UI réutilisables
-- `src/pages` : pages Dashboard / Alerts / Settings
-- `src/types` : types TypeScript
-- `src/styles` : styles globaux
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:5090 pnpm dev
+```
+
+La page Administration demande la clé API. Celle-ci est conservée dans `sessionStorage`
+et supprimée lorsque la session du navigateur se termine ou après une réponse 401.
+
+Ne placez jamais `Admin:ApiKey` dans une variable `VITE_*` : ces variables sont intégrées
+au bundle public.
+
+## Build
+
+```bash
+pnpm run build
+pnpm audit --audit-level high
+```
