@@ -47,29 +47,19 @@ public static class ApiEndpoints
 
                 var snapshot = await db.TrafficSnapshots
                     .AsNoTracking()
-                    .Where(x => x.BorderPointId == point.Id)
+                    .Where(x => x.BorderPointId == point.Id
+                        && x.SourceName == "HERE:ToGeneva")
                     .OrderByDescending(x => x.RecordedAtUtc)
                     .FirstOrDefaultAsync(ct);
 
                 if (snapshot is null)
                 {
-                    results.Add(new LiveBorderStatusDto
-                    {
-                        BorderPointId = point.Id,
-                        BorderPointName = point.Name,
-                        EstimatedDelayMinutes = 0,
-                        SpeedKmh = 0,
-                        CongestionLevel = CongestionLevel.Green,
-                        Trend = TrendDirection.Stable,
-                        PredictedDelayMinutes = 0,
-                        PredictionLabel = "stable",
-                        RecordedAtUtc = DateTime.UtcNow
-                    });
-
+                    // Do not manufacture a green/zero-delay reading when no real
+                    // HERE snapshot exists for this crossing.
                     continue;
                 }
 
-                var trend = await trendAnalyzer.AnalyzeAsync(point.Id, ct);
+                var trend = await trendAnalyzer.AnalyzeAsync(point.Id, snapshot.SourceName, ct);
 
                 results.Add(new LiveBorderStatusDto
                 {
@@ -89,7 +79,10 @@ public static class ApiEndpoints
         });
 
         group.MapGet("/live/directions", async (IDirectionalTrafficService traffic, CancellationToken ct) =>
-            Results.Ok(await traffic.GetCurrentAsync(ct)));
+            Results.Ok(await traffic.GetCachedAsync(ct)));
+
+        group.MapGet("/live/advice", async (IMobilityAdviceService advice, CancellationToken ct) =>
+            Results.Ok(await advice.GetCurrentAsync(ct)));
 
         group.MapGet("/here/quota", (IDirectionalTrafficService traffic) =>
             Results.Ok(traffic.GetQuotaStatus()));
@@ -128,6 +121,8 @@ public static class ApiEndpoints
                 .OrderBy(x => x.RecordedAtUtc)
                 .Select(x => new
                 {
+                    x.BorderPointId,
+                    BorderPointName = x.BorderPoint != null ? x.BorderPoint.Name : "Inconnu",
                     x.SourceName,
                     x.RecordedAtUtc,
                     x.EstimatedDelayMinutes
@@ -136,6 +131,8 @@ public static class ApiEndpoints
 
             var localRows = rows.Select(x => new
             {
+                x.BorderPointId,
+                x.BorderPointName,
                 x.SourceName,
                 LocalTime = ToGenevaLocalTime(x.RecordedAtUtc),
                 x.EstimatedDelayMinutes
@@ -171,10 +168,20 @@ public static class ApiEndpoints
                 [DayOfWeek.Sunday] = "dimanche"
             };
 
-            foreach (var direction in new[] { "ToGeneva", "ToFrance" })
+            foreach (var route in localRows
+                         .Select(x => new
+                         {
+                             x.BorderPointId,
+                             x.BorderPointName,
+                             Direction = x.SourceName["HERE:".Length..]
+                         })
+                         .Distinct()
+                         .OrderBy(x => x.BorderPointName)
+                         .ThenBy(x => x.Direction))
             {
                 var candidates = localRows
-                    .Where(x => x.SourceName == $"HERE:{direction}")
+                    .Where(x => x.BorderPointId == route.BorderPointId
+                        && x.SourceName == $"HERE:{route.Direction}")
                     .GroupBy(x => new
                     {
                         x.LocalTime.DayOfWeek,
@@ -197,10 +204,14 @@ public static class ApiEndpoints
                 }
 
                 var confidence = Math.Min(85, 35 + daysCovered * 3 + candidates.Samples * 3);
-                var label = direction == "ToGeneva" ? "France → Genève" : "Genève → France";
+                var label = route.Direction == "ToGeneva"
+                    ? "France → Genève"
+                    : "Genève → France";
                 response.Suggestions.Add(new TrafficForecastSuggestionDto
                 {
-                    Direction = direction,
+                    BorderPointId = route.BorderPointId,
+                    BorderPointName = route.BorderPointName,
+                    Direction = route.Direction,
                     DirectionLabel = label,
                     BestDay = dayNames[candidates.DayOfWeek],
                     BestHourStart = candidates.Hour,
@@ -208,7 +219,7 @@ public static class ApiEndpoints
                     SampleSize = candidates.Samples,
                     ConfidencePercent = confidence,
                     Advice =
-                        $"Pour le sens {label}, le créneau historiquement le plus fluide est {dayNames[candidates.DayOfWeek]} entre {candidates.Hour:00}h et {candidates.Hour + 2:00}h."
+                        $"À {route.BorderPointName}, pour le sens {label}, le créneau historiquement le plus fluide est {dayNames[candidates.DayOfWeek]} entre {candidates.Hour:00}h et {candidates.Hour + 2:00}h."
                 });
             }
 

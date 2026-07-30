@@ -65,7 +65,10 @@ public class BorderRadarRunner : IBorderRadarRunner
                 continue;
             }
 
-            var trend = await _trendAnalyzer.AnalyzeAsync(snapshot.BorderPointId, ct);
+            var trend = await _trendAnalyzer.AnalyzeAsync(
+                snapshot.BorderPointId,
+                snapshot.SourceName,
+                ct);
             var alert = await _alertEngine.EvaluateAsync(borderPoint, snapshot, trend, settings, ct);
 
             if (alert is not null)

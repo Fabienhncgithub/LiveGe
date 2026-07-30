@@ -12,6 +12,8 @@ public sealed class TrafficForecastDto
 
 public sealed class TrafficForecastSuggestionDto
 {
+    public int BorderPointId { get; set; }
+    public string BorderPointName { get; set; } = string.Empty;
     public string Direction { get; set; } = string.Empty;
     public string DirectionLabel { get; set; } = string.Empty;
     public string BestDay { get; set; } = string.Empty;

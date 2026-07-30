@@ -7,7 +7,14 @@ public class MessageFormatter : IMessageFormatter
 {
     public string FormatAlert(BorderPoint borderPoint, TrafficSnapshot latest, TrendResult trend)
     {
-        var baseMessage = $"\uD83D\uDE97 {borderPoint.Name} \u2192 {latest.EstimatedDelayMinutes} min.";
+        var direction = latest.SourceName switch
+        {
+            "HERE:ToGeneva" => "France → Genève",
+            "HERE:ToFrance" => "Genève → France",
+            _ => "approche frontalière"
+        };
+        var baseMessage =
+            $"\uD83D\uDE97 {borderPoint.Name} · {direction} · +{latest.EstimatedDelayMinutes} min.";
         var trendSentence = trend.PredictionLabel switch
         {
             "hausse probable" => "Hausse probable.",

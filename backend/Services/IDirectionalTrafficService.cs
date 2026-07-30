@@ -4,6 +4,7 @@ namespace FrontiereLiveGe.Api.Services;
 
 public interface IDirectionalTrafficService
 {
-    Task<IReadOnlyList<DirectionalTrafficDto>> GetCurrentAsync(CancellationToken ct);
+    Task<IReadOnlyList<DirectionalTrafficDto>> GetCachedAsync(CancellationToken ct);
+    Task<IReadOnlyList<DirectionalTrafficDto>> RefreshAsync(CancellationToken ct);
     HereQuotaStatusDto GetQuotaStatus();
 }

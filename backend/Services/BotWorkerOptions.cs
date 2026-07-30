@@ -2,5 +2,5 @@ namespace FrontiereLiveGe.Api.Services;
 
 public class BotWorkerOptions
 {
-    public int IntervalMinutes { get; set; } = 5;
+    public int IntervalMinutes { get; set; } = 40;
 }

@@ -35,7 +35,91 @@ export interface DirectionalTraffic {
   sourceName: string
   observedAtUtc?: string | null
   confidencePercent: number
+  isStale: boolean
+  ageMinutes?: number | null
   unavailableReason?: string | null
+}
+
+export type AdviceRecommendation =
+  | 'Recommended'
+  | 'Equivalent'
+  | 'Alternative'
+  | 'Avoid'
+  | 'Unavailable'
+
+export type SourceAvailability = 'Online' | 'Stale' | 'Unavailable'
+
+export interface AdviceReason {
+  kind: string
+  label: string
+  sourceName: string
+  severity: string
+}
+
+export interface RouteAdvice {
+  borderPointName: string
+  direction: 'ToGeneva' | 'ToFrance'
+  directionLabel: string
+  isAvailable: boolean
+  travelTimeMinutes?: number | null
+  freeFlowTimeMinutes?: number | null
+  delayMinutes?: number | null
+  congestionLevel: CongestionLevel | 'Unknown'
+  trend: TrendDirection | 'Unknown'
+  observedAtUtc?: string | null
+  isStale: boolean
+  ageMinutes?: number | null
+  dataCoveragePercent: number
+  contextRiskPoints: number
+  decisionCost: number
+  recommendation: AdviceRecommendation
+  delayAdvantageMinutes?: number | null
+  reasons: AdviceReason[]
+  nearbySignalIds: string[]
+  unavailableReason?: string | null
+}
+
+export interface DataSourceStatus {
+  id: string
+  name: string
+  status: SourceAvailability
+  isOfficial: boolean
+  hasBillingRisk: boolean
+  recordsCount: number
+  relevantSignalsCount: number
+  checkedAtUtc: string
+  dataTimestampUtc?: string | null
+  coverage: string
+  attribution: string
+  sourceUrl: string
+  message?: string | null
+}
+
+export interface RoadSignal {
+  id: string
+  sourceId: string
+  sourceName: string
+  category: string
+  severity: string
+  title: string
+  description: string
+  latitude?: number | null
+  longitude?: number | null
+  travelDirectionDegrees?: number | null
+  appliesToAllRoutes: boolean
+  startsAtUtc?: string | null
+  endsAtUtc?: string | null
+  observedAtUtc?: string | null
+  detailsUrl?: string | null
+}
+
+export interface MobilityAdvice {
+  generatedAtUtc: string
+  algorithmVersion: string
+  scopeNotice: string
+  routes: RouteAdvice[]
+  sources: DataSourceStatus[]
+  signals: RoadSignal[]
 }
 
 export interface HereQuotaStatus {
@@ -60,6 +144,8 @@ export interface HereHistoryEntry {
 }
 
 export interface TrafficForecastSuggestion {
+  borderPointId: number
+  borderPointName: string
   direction: 'ToGeneva' | 'ToFrance'
   directionLabel: string
   bestDay: string

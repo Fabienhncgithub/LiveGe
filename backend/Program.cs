@@ -2,6 +2,7 @@ using FrontiereLiveGe.Api.Data;
 using FrontiereLiveGe.Api.Endpoints;
 using FrontiereLiveGe.Api.Security;
 using FrontiereLiveGe.Api.Services;
+using FrontiereLiveGe.Api.Services.PublicData;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Text.Json.Serialization;
@@ -9,6 +10,9 @@ using System.Threading.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Query-string API keys must never appear in routine HttpClient request logs.
+builder.Logging.AddFilter("System.Net.Http.HttpClient.HereTraffic", LogLevel.Warning);
 
 if (int.TryParse(Environment.GetEnvironmentVariable("PORT"), out var platformPort))
 {
@@ -69,7 +73,12 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.Configure<BotWorkerOptions>(builder.Configuration.GetSection("BotWorker"));
+builder.Services
+    .AddOptions<BotWorkerOptions>()
+    .Bind(builder.Configuration.GetSection("BotWorker"))
+    .Validate(options => options.IntervalMinutes is >= 30 and <= 1440,
+        "BotWorker:IntervalMinutes must be between 30 and 1440.")
+    .ValidateOnStart();
 builder.Services
     .AddOptions<PreviewAccessOptions>()
     .Bind(builder.Configuration.GetSection(PreviewAccessOptions.SectionName))
@@ -84,20 +93,16 @@ builder.Services
         "Traffic:Here:ApiKey is required when HERE traffic is enabled.")
     .Validate(options => options.CacheSeconds >= 1800,
         "Traffic:Here:CacheSeconds must be at least 1800 to protect the free quota.")
-    .Validate(options => options.MaxRequestsPerDay is >= 14 and <= 700,
-        "Traffic:Here:MaxRequestsPerDay must be between 14 and 700.")
+    .Validate(options => options.MaxRequestsPerDay is >= 14 and <= 600,
+        "Traffic:Here:MaxRequestsPerDay must be between 14 and 600.")
+    .Validate(options => !options.Enabled
+        || IsAllowedHttpsEndpoint(options.BaseUrl, "router.hereapi.com"),
+        "Traffic:Here:BaseUrl must use https://router.hereapi.com.")
     .ValidateOnStart();
 
 builder.Services.AddScoped<DbInitializer>();
 
-if (builder.Configuration.GetValue<bool>("Traffic:SimulationEnabled"))
-{
-    builder.Services.AddScoped<ITrafficDataProvider, FakeTrafficDataProvider>();
-}
-else
-{
-    builder.Services.AddScoped<ITrafficDataProvider, UnavailableTrafficDataProvider>();
-}
+builder.Services.AddScoped<ITrafficDataProvider, HereTrafficDataProvider>();
 builder.Services.AddHttpClient("HereTraffic", (services, client) =>
 {
     var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<HereTrafficOptions>>().Value;
@@ -105,7 +110,37 @@ builder.Services.AddHttpClient("HereTraffic", (services, client) =>
     client.Timeout = TimeSpan.FromSeconds(12);
 });
 builder.Services.AddSingleton<IDirectionalTrafficService, HereDirectionalTrafficService>();
-builder.Services.AddHostedService<DirectionalTrafficCollector>();
+builder.Services.AddHttpClient("GenevaRoadworks", client =>
+{
+    client.BaseAddress = new Uri(
+        "https://app2.ge.ch/tergeoservices/rest/services/Hosted/INFOMOB_CHANTIER_POINT/FeatureServer/0/");
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("FrontiereLiveGE/1.0");
+});
+builder.Services.AddHttpClient("BisonFute", client =>
+{
+    client.BaseAddress = new Uri(
+        "https://tipi.bison-fute.gouv.fr/bison-fute-ouvert/publicationsDIR/Evenementiel-DIR/grt/RRN/");
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("FrontiereLiveGE/1.0");
+});
+builder.Services.AddHttpClient("MeteoSwiss", client =>
+{
+    client.BaseAddress = new Uri("https://data.geo.admin.ch/ch.meteoschweiz.ogd-smn/");
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("FrontiereLiveGE/1.0");
+});
+builder.Services.AddSingleton<GenevaRoadworksProvider>();
+builder.Services.AddSingleton<BisonFuteProvider>();
+builder.Services.AddSingleton<MeteoSwissProvider>();
+builder.Services.AddSingleton<IPublicDataProvider>(services =>
+    services.GetRequiredService<GenevaRoadworksProvider>());
+builder.Services.AddSingleton<IPublicDataProvider>(services =>
+    services.GetRequiredService<BisonFuteProvider>());
+builder.Services.AddSingleton<IPublicDataProvider>(services =>
+    services.GetRequiredService<MeteoSwissProvider>());
+builder.Services.AddSingleton<IRoadContextService, RoadContextService>();
+builder.Services.AddSingleton<IMobilityAdviceService, MobilityAdviceService>();
 builder.Services.AddScoped<ITrafficIngestionService, TrafficIngestionService>();
 builder.Services.AddScoped<ITrendAnalyzer, TrendAnalyzer>();
 builder.Services.AddScoped<IAlertEngine, AlertEngine>();
@@ -120,6 +155,11 @@ builder.Services
                 && !string.IsNullOrWhiteSpace(options.AccessToken)
                 && !string.IsNullOrWhiteSpace(options.RefreshToken)),
         "X OAuth requires ClientId, ClientSecret, AccessToken and RefreshToken when enabled.")
+    .Validate(
+        options => !options.Enabled
+            || (IsAllowedHttpsEndpoint(options.ApiBaseUrl, "api.x.com")
+                && IsAllowedHttpsEndpoint(options.OAuthBaseUrl, "api.x.com")),
+        "X API endpoints must use https://api.x.com.")
     .ValidateOnStart();
 builder.Services.AddHttpClient("XOAuth", client =>
 {
@@ -163,9 +203,14 @@ app.Use(async (context, next) =>
 {
     context.Response.Headers.XContentTypeOptions = "nosniff";
     context.Response.Headers.XFrameOptions = "DENY";
-    context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     context.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
-    if (context.Request.Path.StartsWithSegments("/api/admin"))
+    context.Response.Headers["Content-Security-Policy"] =
+        "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; " +
+        "script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data: blob: https://tiles.openfreemap.org; " +
+        "connect-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; form-action 'self'";
+    if (context.Request.Path.StartsWithSegments("/api"))
     {
         context.Response.Headers.CacheControl = "no-store";
     }
@@ -196,3 +241,8 @@ await using (var scope = app.Services.CreateAsyncScope())
 }
 
 await app.RunAsync();
+
+static bool IsAllowedHttpsEndpoint(string value, string expectedHost) =>
+    Uri.TryCreate(value, UriKind.Absolute, out var uri)
+    && uri.Scheme == Uri.UriSchemeHttps
+    && uri.Host.Equals(expectedHost, StringComparison.OrdinalIgnoreCase);

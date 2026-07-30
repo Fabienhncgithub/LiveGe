@@ -2,32 +2,17 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
-using FrontiereLiveGe.Api.Data;
 using FrontiereLiveGe.Api.Dtos;
-using FrontiereLiveGe.Api.Enums;
-using FrontiereLiveGe.Api.Models;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace FrontiereLiveGe.Api.Services;
 
 public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
 {
-    private static readonly BorderCorridor[] Corridors =
-    {
-        new("Bardonnex", new(46.1248, 6.1207), new(46.1564, 6.1349)),
-        new("Perly", new(46.0929, 6.0643), new(46.1237, 6.0867)),
-        new("Moillesulaz", new(46.1805, 6.2228), new(46.1978, 6.1905)),
-        new("Thônex-Vallard", new(46.1842, 6.2340), new(46.2014, 6.1980)),
-        new("Anières", new(46.2837, 6.2363), new(46.2632, 6.2110)),
-        new("Meyrin", new(46.2459, 6.0642), new(46.2263, 6.0974)),
-        new("Ferney-Voltaire", new(46.2663, 6.1047), new(46.2397, 6.1200))
-    };
-
     private readonly HttpClient _http;
     private readonly HereTrafficOptions _options;
     private readonly ILogger<HereDirectionalTrafficService> _logger;
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly string _budgetStatePath;
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
     private readonly object _budgetLock = new();
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
@@ -35,20 +20,46 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
     public HereDirectionalTrafficService(
         IHttpClientFactory httpClientFactory,
         IOptions<HereTrafficOptions> options,
-        ILogger<HereDirectionalTrafficService> logger,
-        IServiceScopeFactory scopeFactory)
+        IHostEnvironment environment,
+        ILogger<HereDirectionalTrafficService> logger)
     {
         _http = httpClientFactory.CreateClient("HereTraffic");
         _options = options.Value;
         _logger = logger;
-        _scopeFactory = scopeFactory;
+
+        var contentRoot = Path.GetFullPath(environment.ContentRootPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        _budgetStatePath = Path.GetFullPath(_options.BudgetStatePath, contentRoot);
+        var allowedPrefix = contentRoot + Path.DirectorySeparatorChar;
+        if (!_budgetStatePath.StartsWith(
+                allowedPrefix,
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Traffic:Here:BudgetStatePath must stay inside the application content root.");
+        }
     }
 
-    public async Task<IReadOnlyList<DirectionalTrafficDto>> GetCurrentAsync(CancellationToken ct)
+    public Task<IReadOnlyList<DirectionalTrafficDto>> GetCachedAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var results = BorderCorridorCatalog.All
+            .SelectMany(corridor => new[]
+            {
+                ReadCached(corridor.Name, "ToGeneva", "France → Genève"),
+                ReadCached(corridor.Name, "ToFrance", "Genève → France")
+            })
+            .ToList();
+        return Task.FromResult<IReadOnlyList<DirectionalTrafficDto>>(results);
+    }
+
+    public async Task<IReadOnlyList<DirectionalTrafficDto>> RefreshAsync(CancellationToken ct)
     {
         if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.ApiKey))
         {
-            return Corridors
+            return BorderCorridorCatalog.All
                 .SelectMany(c => new[]
                 {
                     Unavailable(c.Name, "ToGeneva", "France → Genève", "Clé HERE non configurée."),
@@ -60,8 +71,8 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
         await _refreshLock.WaitAsync(ct);
         try
         {
-            var results = new List<DirectionalTrafficDto>(Corridors.Length * 2);
-            foreach (var corridor in Corridors)
+            var results = new List<DirectionalTrafficDto>(BorderCorridorCatalog.All.Count * 2);
+            foreach (var corridor in BorderCorridorCatalog.All)
             {
                 ct.ThrowIfCancellationRequested();
                 results.Add(await GetDirectionAsync(
@@ -69,6 +80,7 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
                     "ToGeneva",
                     "France → Genève",
                     corridor.France,
+                    corridor.Crossing,
                     corridor.Geneva,
                     ct));
                 results.Add(await GetDirectionAsync(
@@ -76,11 +88,11 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
                     "ToFrance",
                     "Genève → France",
                     corridor.Geneva,
+                    corridor.Crossing,
                     corridor.France,
                     ct));
             }
 
-            await PersistReadingsAsync(results, ct);
             return results;
         }
         finally
@@ -94,13 +106,13 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
         lock (_budgetLock)
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            var limit = Math.Clamp(_options.MaxRequestsPerDay, 14, 700);
+            var limit = Math.Clamp(_options.MaxRequestsPerDay, 14, 600);
             var used = 0;
             var stateReadable = true;
 
             try
             {
-                var statePath = Path.GetFullPath(_options.BudgetStatePath);
+                var statePath = _budgetStatePath;
                 if (File.Exists(statePath))
                 {
                     var parts = File.ReadAllText(statePath).Trim().Split('|', 2);
@@ -157,8 +169,9 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
         string borderName,
         string direction,
         string label,
-        Coordinate origin,
-        Coordinate destination,
+        BorderCorridorCatalog.Coordinate origin,
+        BorderCorridorCatalog.Coordinate crossing,
+        BorderCorridorCatalog.Coordinate destination,
         CancellationToken ct)
     {
         var cacheKey = $"{borderName}|{direction}";
@@ -170,6 +183,7 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
 
         var coordinates = string.Create(CultureInfo.InvariantCulture,
             $"routes?transportMode=car&origin={origin.Latitude:F6},{origin.Longitude:F6}" +
+            $"&via={crossing.Latitude:F6},{crossing.Longitude:F6}" +
             $"&destination={destination.Latitude:F6},{destination.Longitude:F6}&return=summary");
         var url = $"{coordinates}&apiKey={Uri.EscapeDataString(_options.ApiKey)}";
 
@@ -179,7 +193,7 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
             {
                 _logger.LogWarning("HERE daily request budget reached; request blocked locally.");
                 return _cache.TryGetValue(cacheKey, out cached)
-                    ? cached.Value
+                    ? AsStale(cached, "Plafond quotidien HERE atteint ; dernière mesure conservée.")
                     : Unavailable(borderName, direction, label, "Plafond quotidien HERE atteint.");
             }
 
@@ -188,18 +202,26 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
             {
                 _logger.LogWarning("HERE route request failed for {Border}/{Direction}: HTTP {Status}.",
                     borderName, direction, (int)response.StatusCode);
-                return Unavailable(borderName, direction, label, $"HERE a répondu HTTP {(int)response.StatusCode}.");
+                return _cache.TryGetValue(cacheKey, out cached)
+                    ? AsStale(cached, $"HERE a répondu HTTP {(int)response.StatusCode} ; dernière mesure conservée.")
+                    : Unavailable(borderName, direction, label, $"HERE a répondu HTTP {(int)response.StatusCode}.");
             }
 
             var payload = await response.Content.ReadFromJsonAsync<HereRoutesResponse>(cancellationToken: ct);
-            var summary = payload?.Routes.FirstOrDefault()?.Sections.FirstOrDefault()?.Summary;
-            if (summary is null)
+            var summaries = payload?.Routes.FirstOrDefault()?.Sections
+                .Select(x => x.Summary)
+                .Where(x => x is not null)
+                .Select(x => x!)
+                .ToList();
+            if (summaries is null || summaries.Count == 0)
             {
-                return Unavailable(borderName, direction, label, "Aucun itinéraire HERE disponible.");
+                return _cache.TryGetValue(cacheKey, out cached)
+                    ? AsStale(cached, "Aucun nouvel itinéraire HERE ; dernière mesure conservée.")
+                    : Unavailable(borderName, direction, label, "Aucun itinéraire HERE disponible.");
             }
 
-            var duration = Math.Max(0, summary.Duration);
-            var baseDuration = Math.Max(0, summary.BaseDuration);
+            var duration = summaries.Sum(x => Math.Max(0, x.Duration));
+            var baseDuration = summaries.Sum(x => Math.Max(0, x.BaseDuration));
             var delaySeconds = Math.Max(0, duration - baseDuration);
             var delayMinutes = (int)Math.Ceiling(delaySeconds / 60d);
             var trend = "Stable";
@@ -225,6 +247,8 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
                 Trend = trend,
                 SourceName = "HERE Traffic",
                 ObservedAtUtc = DateTime.UtcNow,
+                IsStale = false,
+                AgeMinutes = 0,
                 ConfidencePercent = 85
             };
 
@@ -236,7 +260,7 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
             _logger.LogWarning(ex, "HERE route request unavailable for {Border}/{Direction}.", borderName, direction);
             if (_cache.TryGetValue(cacheKey, out cached))
             {
-                return cached.Value;
+                return AsStale(cached, "HERE est indisponible ; dernière mesure conservée.");
             }
 
             return Unavailable(borderName, direction, label, "Service HERE temporairement indisponible.");
@@ -256,52 +280,53 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
             UnavailableReason = reason
         };
 
-    private async Task PersistReadingsAsync(IReadOnlyCollection<DirectionalTrafficDto> readings, CancellationToken ct)
+    private DirectionalTrafficDto ReadCached(string border, string direction, string label)
     {
-        var available = readings.Where(x => x.IsAvailable && x.ObservedAtUtc.HasValue).ToList();
-        if (available.Count == 0)
+        var cacheKey = $"{border}|{direction}";
+        if (!_cache.TryGetValue(cacheKey, out var cached))
         {
-            return;
+            return Unavailable(
+                border,
+                direction,
+                label,
+                _options.Enabled
+                    ? "Première collecte HERE en attente."
+                    : "Clé HERE non configurée.");
         }
 
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var points = await db.BorderPoints.AsNoTracking().ToDictionaryAsync(x => x.Name, ct);
-
-        foreach (var reading in available)
+        var age = DateTime.UtcNow - cached.StoredAtUtc;
+        var freshness = TimeSpan.FromSeconds(Math.Clamp(_options.CacheSeconds, 1800, 3600));
+        if (age > TimeSpan.FromTicks(freshness.Ticks * 4))
         {
-            if (!points.TryGetValue(reading.BorderPointName, out var point))
-            {
-                continue;
-            }
-
-            var sourceName = $"HERE:{reading.Direction}";
-            var observedAt = reading.ObservedAtUtc!.Value;
-            var alreadyStored = await db.TrafficSnapshots
-                .AsNoTracking()
-                .AnyAsync(x => x.BorderPointId == point.Id
-                    && x.SourceName == sourceName
-                    && x.RecordedAtUtc == observedAt, ct);
-            if (alreadyStored)
-            {
-                continue;
-            }
-
-            var congestion = Enum.TryParse<CongestionLevel>(reading.CongestionLevel, out var parsed)
-                ? parsed
-                : CongestionLevel.Green;
-            db.TrafficSnapshots.Add(new TrafficSnapshot
-            {
-                BorderPointId = point.Id,
-                RecordedAtUtc = observedAt,
-                EstimatedDelayMinutes = reading.DelayMinutes ?? 0,
-                SpeedKmh = 0,
-                CongestionLevel = congestion,
-                SourceName = sourceName
-            });
+            return Unavailable(border, direction, label, "Dernière mesure HERE trop ancienne.");
         }
 
-        await db.SaveChangesAsync(ct);
+        return age <= freshness
+            ? cached.Value
+            : AsStale(cached, "Mesure HERE en retard d’actualisation.");
+    }
+
+    private static DirectionalTrafficDto AsStale(CacheEntry cached, string reason)
+    {
+        var value = cached.Value;
+        return new DirectionalTrafficDto
+        {
+            BorderPointName = value.BorderPointName,
+            Direction = value.Direction,
+            DirectionLabel = value.DirectionLabel,
+            IsAvailable = value.IsAvailable,
+            TravelTimeMinutes = value.TravelTimeMinutes,
+            FreeFlowTimeMinutes = value.FreeFlowTimeMinutes,
+            DelayMinutes = value.DelayMinutes,
+            CongestionLevel = value.CongestionLevel,
+            Trend = value.Trend,
+            SourceName = value.SourceName,
+            ObservedAtUtc = value.ObservedAtUtc,
+            IsStale = true,
+            AgeMinutes = Math.Max(0, (int)Math.Floor((DateTime.UtcNow - cached.StoredAtUtc).TotalMinutes)),
+            ConfidencePercent = Math.Min(45, value.ConfidencePercent),
+            UnavailableReason = reason
+        };
     }
 
     private bool TryReserveRequest()
@@ -311,7 +336,7 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
             try
             {
                 var today = DateOnly.FromDateTime(DateTime.UtcNow);
-                var statePath = Path.GetFullPath(_options.BudgetStatePath);
+                var statePath = _budgetStatePath;
                 var requestsToday = 0;
 
                 if (File.Exists(statePath))
@@ -333,7 +358,7 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
                     }
                 }
 
-                var limit = Math.Clamp(_options.MaxRequestsPerDay, 14, 700);
+                var limit = Math.Clamp(_options.MaxRequestsPerDay, 14, 600);
                 if (requestsToday >= limit)
                 {
                     return false;
@@ -359,8 +384,6 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
         }
     }
 
-    private sealed record Coordinate(double Latitude, double Longitude);
-    private sealed record BorderCorridor(string Name, Coordinate France, Coordinate Geneva);
     private sealed record CacheEntry(DateTime StoredAtUtc, DirectionalTrafficDto Value);
 
     private sealed class HereRoutesResponse

@@ -7,6 +7,7 @@ import type {
   HereHistoryEntry,
   HereQuotaStatus,
   LiveBorderStatus,
+  MobilityAdvice,
   RunSummary,
   TrafficSnapshot,
   TrafficForecast
@@ -17,6 +18,8 @@ export const fetchBorderPoints = () => getJson<BorderPoint[]>('/api/border-point
 export const fetchLiveStatuses = () => getJson<LiveBorderStatus[]>('/api/live')
 
 export const fetchDirectionalTraffic = () => getJson<DirectionalTraffic[]>('/api/live/directions')
+
+export const fetchMobilityAdvice = () => getJson<MobilityAdvice>('/api/live/advice')
 
 export const fetchHereQuota = () => getJson<HereQuotaStatus>('/api/here/quota')
 

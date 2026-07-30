@@ -14,11 +14,17 @@ public class TrendAnalyzer : ITrendAnalyzer
         _db = db;
     }
 
-    public async Task<TrendResult> AnalyzeAsync(int borderPointId, CancellationToken ct)
+    public async Task<TrendResult> AnalyzeAsync(
+        int borderPointId,
+        string? sourceName,
+        CancellationToken ct)
     {
+        var recentSince = DateTime.UtcNow.AddHours(-3);
         var snapshots = await _db.TrafficSnapshots
             .AsNoTracking()
-            .Where(x => x.BorderPointId == borderPointId)
+            .Where(x => x.BorderPointId == borderPointId
+                && (sourceName == null || x.SourceName == sourceName)
+                && x.RecordedAtUtc >= recentSince)
             .OrderByDescending(x => x.RecordedAtUtc)
             .Take(3)
             .ToListAsync(ct);
@@ -87,7 +93,7 @@ public class TrendAnalyzer : ITrendAnalyzer
         var d2 = snapshots[2].EstimatedDelayMinutes - snapshots[1].EstimatedDelayMinutes;
         var avgDelta = (d1 + d2) / 2.0;
 
-        var projectionFactor = 2.0; // roughly +20 min horizon in a 10-min cadence
+        const double projectionFactor = 1.0; // next collection cycle (40 minutes by default)
         var predicted = current;
 
         if (trend == TrendDirection.Rising || trend == TrendDirection.Falling)

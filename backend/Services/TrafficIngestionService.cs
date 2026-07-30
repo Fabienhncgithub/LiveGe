@@ -24,8 +24,6 @@ public class TrafficIngestionService : ITrafficIngestionService
         var borderByName = borderPoints.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
 
         var snapshots = new List<TrafficSnapshot>();
-        var now = DateTime.UtcNow;
-
         foreach (var reading in readings)
         {
             if (!borderByName.TryGetValue(reading.BorderPointName, out var borderPoint))
@@ -34,13 +32,26 @@ public class TrafficIngestionService : ITrafficIngestionService
                 continue;
             }
 
+            var recordedAt = reading.RecordedAtUtc == default
+                ? DateTime.UtcNow
+                : DateTime.SpecifyKind(reading.RecordedAtUtc, DateTimeKind.Utc);
+            var alreadyStored = await _db.TrafficSnapshots
+                .AsNoTracking()
+                .AnyAsync(x => x.BorderPointId == borderPoint.Id
+                    && x.SourceName == reading.SourceName
+                    && x.RecordedAtUtc == recordedAt, ct);
+            if (alreadyStored)
+            {
+                continue;
+            }
+
             var snapshot = new TrafficSnapshot
             {
                 BorderPointId = borderPoint.Id,
-                RecordedAtUtc = now,
+                RecordedAtUtc = recordedAt,
                 EstimatedDelayMinutes = reading.EstimatedDelayMinutes,
                 SpeedKmh = reading.SpeedKmh,
-                CongestionLevel = CongestionCalculator.Calculate(reading.EstimatedDelayMinutes),
+                CongestionLevel = reading.CongestionLevel,
                 SourceName = reading.SourceName
             };
 

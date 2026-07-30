@@ -37,6 +37,8 @@ export default function Alerts() {
 
   useEffect(() => {
     void load()
+    const timer = window.setInterval(() => void load(), 60_000)
+    return () => window.clearInterval(timer)
   }, [load])
 
   useEffect(() => {
@@ -103,8 +105,8 @@ export default function Alerts() {
               ) : (
                 <div className="forecast-grid">
                   {forecast.suggestions.map((suggestion) => (
-                    <article key={suggestion.direction}>
-                      <span>{suggestion.directionLabel}</span>
+                    <article key={`${suggestion.borderPointId}-${suggestion.direction}`}>
+                      <span>{suggestion.borderPointName} · {suggestion.directionLabel}</span>
                       <strong>{suggestion.bestDay} · {suggestion.bestHourStart}h–{suggestion.bestHourStart + 2}h</strong>
                       <p>{suggestion.averageDelayMinutes} min de retard moyen observé</p>
                       <small>{suggestion.confidencePercent}% confiance · {suggestion.sampleSize} mesures</small>

@@ -32,8 +32,17 @@ public class AlertEngine : IAlertEngine
         }
 
         var severity = GetSeverity(latest.EstimatedDelayMinutes, warningDelayThreshold, settings.CriticalDelayMinutes);
-        var fingerprint = BuildFingerprint(borderPoint.Id, latest.CongestionLevel, trend.Trend, latest.EstimatedDelayMinutes);
-        var categoryPrefix = BuildCategoryPrefix(borderPoint.Id, latest.CongestionLevel, trend.Trend);
+        var fingerprint = BuildFingerprint(
+            borderPoint.Id,
+            latest.SourceName,
+            latest.CongestionLevel,
+            trend.Trend,
+            latest.EstimatedDelayMinutes);
+        var categoryPrefix = BuildCategoryPrefix(
+            borderPoint.Id,
+            latest.SourceName,
+            latest.CongestionLevel,
+            trend.Trend);
 
         // Anti-doublon sur une fenetre longue: utile pour limiter les posts X payants.
         var recentSince = DateTime.UtcNow.AddMinutes(-90);
@@ -85,14 +94,23 @@ public class AlertEngine : IAlertEngine
         return AlertSeverity.Info;
     }
 
-    private static string BuildFingerprint(int borderPointId, CongestionLevel level, TrendDirection trend, int delayMinutes)
+    private static string BuildFingerprint(
+        int borderPointId,
+        string sourceName,
+        CongestionLevel level,
+        TrendDirection trend,
+        int delayMinutes)
     {
         var bucket = delayMinutes / 5;
-        return $"{borderPointId}|{level}|{trend}|{bucket}";
+        return $"{borderPointId}|{sourceName}|{level}|{trend}|{bucket}";
     }
 
-    private static string BuildCategoryPrefix(int borderPointId, CongestionLevel level, TrendDirection trend)
+    private static string BuildCategoryPrefix(
+        int borderPointId,
+        string sourceName,
+        CongestionLevel level,
+        TrendDirection trend)
     {
-        return $"{borderPointId}|{level}|{trend}|";
+        return $"{borderPointId}|{sourceName}|{level}|{trend}|";
     }
 }

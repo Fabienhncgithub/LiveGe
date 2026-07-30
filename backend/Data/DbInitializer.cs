@@ -1,4 +1,3 @@
-using FrontiereLiveGe.Api.Enums;
 using FrontiereLiveGe.Api.Models;
 using FrontiereLiveGe.Api.Services;
 using Microsoft.EntityFrameworkCore;
@@ -64,37 +63,6 @@ public class DbInitializer
 
         await _db.SaveChangesAsync();
 
-        if (!await _db.TrafficSnapshots.AnyAsync())
-        {
-            var now = DateTime.UtcNow;
-            var points = await _db.BorderPoints.ToListAsync();
-
-            foreach (var point in points)
-            {
-                var delay = point.Name switch
-                {
-                    "Bardonnex" => 8,
-                    "Perly" => 12,
-                    "Moillesulaz" => 6,
-                    "Th\u00f4nex-Vallard" => 7,
-                    _ => 5
-                };
-
-                var speed = Math.Clamp(70 - delay * 2, 10, 80);
-
-                _db.TrafficSnapshots.Add(new TrafficSnapshot
-                {
-                    BorderPointId = point.Id,
-                    RecordedAtUtc = now,
-                    EstimatedDelayMinutes = delay,
-                    SpeedKmh = speed,
-                    CongestionLevel = CongestionCalculator.Calculate(delay),
-                    SourceName = "Seed"
-                });
-            }
-
-            await _db.SaveChangesAsync();
-        }
     }
 
     private async Task UpsertBorderPointsAsync()
