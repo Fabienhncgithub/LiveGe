@@ -231,7 +231,7 @@ app.MapGet("/health", async (AppDbContext db, CancellationToken ct) =>
         : Results.Json(new { status = "degraded", database = "unavailable" }, statusCode: 503))
     .RequireRateLimiting("public");
 
-app.MapApiEndpoints();
+app.MapApiEndpoints(builder.Configuration.GetValue<bool>("Admin:EndpointsEnabled"));
 app.MapFallbackToFile("index.html");
 
 await using (var scope = app.Services.CreateAsyncScope())

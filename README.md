@@ -144,7 +144,11 @@ It is a historical pattern, not a guarantee of future traffic.
 
 ## Protected administration API
 
-These routes require the `X-Admin-Key` header:
+The public frontend contains no administration navigation or screen. Administration routes
+are not mapped by default, so `/api/admin/*` returns `404` in production.
+
+For local maintenance only, `appsettings.Development.json` enables these routes. They still
+require the `X-Admin-Key` header:
 
 - `GET /api/admin/settings`
 - `PUT /api/admin/settings`
@@ -155,6 +159,32 @@ These routes require the `X-Admin-Key` header:
 For an internet deployment, enable HTTPS redirection behind a correctly configured reverse
 proxy, set explicit CORS origins, use a long random admin key, and optionally enable preview
 basic authentication. The Vite development server must never be exposed publicly.
+
+Never set `Admin__EndpointsEnabled=true` on the public demo unless the administration API is
+strictly required and a new random `Admin__ApiKey` has been stored as a platform secret.
+
+## Free public preview
+
+The repository Dockerfile serves the compiled React frontend and the .NET API from one
+container. A Koyeb `free` web service is the simplest zero-compute-charge preview:
+
+[![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=git&builder=dockerfile&dockerfile=Dockerfile&repository=github.com/Fabienhncgithub/LiveGe&branch=main&name=frontiere-live-ge&service_type=web&instance_type=free&regions=fra&ports=8000%3Bhttp%3B%2F&env%5BAdmin__EndpointsEnabled%5D=false&env%5BX__Enabled%5D=false&env%5BSecurity__UseHttpsRedirection%5D=false)
+
+Before confirming the deployment:
+
+1. select the `free` instance explicitly;
+2. add a newly rotated HERE key as the secret `Traffic__Here__ApiKey`;
+3. set `Traffic__Here__Enabled=true` only after provider-side quota and billing alerts are
+   configured;
+4. keep `Admin__EndpointsEnabled=false` and `X__Enabled=false` for the public preview;
+5. use `/health` as the health-check path.
+
+Free Koyeb instances scale to zero after one hour without inbound traffic and have ephemeral
+local storage. Consequently, SQLite history and the local HERE budget counter can disappear
+after rescheduling or deployment. This tier is suitable for user testing, not for a durable
+production service. Do not enable a billable HERE key on ephemeral hosting unless the HERE
+account itself enforces a hard limit; an application-local counter alone is not a billing
+guarantee.
 
 ## HERE cost safeguards
 

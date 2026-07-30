@@ -5,8 +5,7 @@ interface NavBarProps {
 
 const links = [
   { path: '/dashboard', label: 'Trafic' },
-  { path: '/alerts', label: 'Alertes' },
-  { path: '/settings', label: 'Admin' }
+  { path: '/alerts', label: 'Alertes' }
 ]
 
 export default function NavBar({ currentPath, onNavigate }: NavBarProps) {

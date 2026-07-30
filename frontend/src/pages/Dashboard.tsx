@@ -75,6 +75,14 @@ const formattedObservation = (route: RouteAdvice) => {
   })
 }
 
+const trafficLabel = (route: RouteAdvice) => {
+  if (!route.isAvailable) return 'Pas de mesure'
+  if (route.isStale) return 'Mesure en cache'
+  if ((route.delayMinutes ?? 0) >= 15) return 'Fortement chargé'
+  if ((route.delayMinutes ?? 0) >= 7) return 'Ralenti'
+  return 'Fluide'
+}
+
 export default function Dashboard() {
   const [advice, setAdvice] = useState<MobilityAdvice | null>(null)
   const [selectedDirection, setSelectedDirection] = useState<SelectedDirection>('ToGeneva')
@@ -171,6 +179,37 @@ export default function Dashboard() {
           <small>Je vais vers la France</small>
         </button>
       </div>
+
+      <section className="traffic-glance" aria-label="État du trafic en un coup d’œil">
+        <div className="traffic-glance__heading">
+          <div>
+            <span className="section-kicker">Maintenant</span>
+            <strong>{selectedDirection === 'ToGeneva' ? 'Entrée vers Genève' : 'Sortie vers la France'}</strong>
+          </div>
+          <small>Retard par rapport à un trajet fluide · cliquer sur un passage dans la carte pour le détail</small>
+        </div>
+        <div className="traffic-glance__routes">
+          {selectedRoutes.map((route) => {
+            const trend = trendContent[route.trend]
+            return (
+              <article
+                className={`traffic-glance__route traffic-glance__route--${congestionClass(route.congestionLevel)}`}
+                key={`glance-${route.borderPointName}-${route.direction}`}
+              >
+                <span className="traffic-glance__level" aria-hidden="true" />
+                <div>
+                  <strong>{route.borderPointName}</strong>
+                  <small>{trafficLabel(route)}</small>
+                </div>
+                <b>{route.isAvailable ? `+${route.delayMinutes ?? 0}` : '—'}<small> min</small></b>
+                <span className={`traffic-glance__trend traffic-glance__trend--${trend.className}`}>
+                  {trend.icon} {trend.label}
+                </span>
+              </article>
+            )
+          })}
+        </div>
+      </section>
 
       {error && <div className="error-banner">{error}</div>}
 

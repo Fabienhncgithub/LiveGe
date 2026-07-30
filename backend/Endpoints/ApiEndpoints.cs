@@ -12,13 +12,12 @@ namespace FrontiereLiveGe.Api.Endpoints;
 
 public static class ApiEndpoints
 {
-    public static IEndpointRouteBuilder MapApiEndpoints(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapApiEndpoints(
+        this IEndpointRouteBuilder app,
+        bool adminEndpointsEnabled = false)
     {
         var group = app.MapGroup("/api")
             .RequireRateLimiting("public");
-        var admin = app.MapGroup("/api/admin")
-            .RequireAuthorization(AdminApiKeyDefaults.AuthorizationPolicy)
-            .RequireRateLimiting("admin");
 
         group.MapGet("/border-points", async (AppDbContext db, CancellationToken ct) =>
         {
@@ -254,6 +253,15 @@ public static class ApiEndpoints
 
             return Results.Ok(snapshots.Select(x => x.ToDto()));
         });
+
+        if (!adminEndpointsEnabled)
+        {
+            return app;
+        }
+
+        var admin = app.MapGroup("/api/admin")
+            .RequireAuthorization(AdminApiKeyDefaults.AuthorizationPolicy)
+            .RequireRateLimiting("admin");
 
         admin.MapGet("/settings", async (AppDbContext db, CancellationToken ct) =>
         {
