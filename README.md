@@ -166,25 +166,25 @@ strictly required and a new random `Admin__ApiKey` has been stored as a platform
 ## Free public preview
 
 The repository Dockerfile serves the compiled React frontend and the .NET API from one
-container. A Koyeb `free` web service is the simplest zero-compute-charge preview:
+container. A Render `free` web service can deploy the complete demo from the included
+`render.yaml` Blueprint:
 
-[![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=git&builder=dockerfile&dockerfile=Dockerfile&repository=github.com/Fabienhncgithub/LiveGe&branch=main&name=frontiere-live-ge&service_type=web&instance_type=free&regions=fra&ports=8000%3Bhttp%3B%2F&env%5BAdmin__EndpointsEnabled%5D=false&env%5BX__Enabled%5D=false&env%5BSecurity__UseHttpsRedirection%5D=false)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2FFabienhncgithub%2FLiveGe)
 
 Before confirming the deployment:
 
-1. select the `free` instance explicitly;
-2. add a newly rotated HERE key as the secret `Traffic__Here__ApiKey`;
-3. set `Traffic__Here__Enabled=true` only after provider-side quota and billing alerts are
+1. verify that the instance plan is `free`;
+2. deploy first with HERE disabled;
+3. add a newly rotated HERE key as the secret `Traffic__Here__ApiKey`;
+4. set `Traffic__Here__Enabled=true` only after provider-side quota and billing alerts are
    configured;
-4. keep `Admin__EndpointsEnabled=false` and `X__Enabled=false` for the public preview;
-5. use `/health` as the health-check path.
+5. keep `Admin__EndpointsEnabled=false` and `X__Enabled=false` for the public preview.
 
-Free Koyeb instances scale to zero after one hour without inbound traffic and have ephemeral
-local storage. Consequently, SQLite history and the local HERE budget counter can disappear
-after rescheduling or deployment. This tier is suitable for user testing, not for a durable
-production service. Do not enable a billable HERE key on ephemeral hosting unless the HERE
-account itself enforces a hard limit; an application-local counter alone is not a billing
-guarantee.
+Free Render services scale down after inactivity and have ephemeral local storage.
+Consequently, SQLite history and the local HERE budget counter disappear after sleep,
+restart, or deployment. This tier is suitable for user testing, not for a durable production
+service. Do not enable a billable HERE key on ephemeral hosting unless the HERE account itself
+enforces a hard limit; an application-local counter alone is not a billing guarantee.
 
 ## HERE cost safeguards
 

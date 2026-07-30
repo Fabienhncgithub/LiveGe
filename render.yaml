@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: frontiere-live-ge
+    runtime: docker
+    plan: free
+    region: frankfurt
+    repo: https://github.com/Fabienhncgithub/LiveGe
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: Admin__EndpointsEnabled
+        value: "false"
+      - key: X__Enabled
+        value: "false"
+      - key: Traffic__Here__Enabled
+        value: "false"
+      - key: Security__UseHttpsRedirection
+        value: "false"
