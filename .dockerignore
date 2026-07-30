@@ -1,0 +1,15 @@
+.git
+.github
+.agents
+.codex
+**/node_modules
+**/bin
+**/obj
+**/dist
+**/*.db
+**/*.db-shm
+**/*.db-wal
+backend/data
+.env
+.env.*
+!**/.env.example

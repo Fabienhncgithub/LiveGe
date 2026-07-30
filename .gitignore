@@ -11,6 +11,7 @@ obj/
 *.db
 *.db-shm
 *.db-wal
+backend/data/
 
 # TypeScript
 *.tsbuildinfo

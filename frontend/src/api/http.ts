@@ -1,6 +1,8 @@
 type JsonValue = object | Array<unknown>
 
-const baseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:5000'
+const baseUrl =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)
+  ?? (import.meta.env.DEV ? 'http://127.0.0.1:5090' : '')
 const adminKeyStorageKey = 'frontiere-live-ge.admin-key'
 
 const getAdminKey = () => sessionStorage.getItem(adminKeyStorageKey)

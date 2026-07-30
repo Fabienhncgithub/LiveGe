@@ -88,6 +88,137 @@ public static class ApiEndpoints
             return Results.Ok(results);
         });
 
+        group.MapGet("/live/directions", async (IDirectionalTrafficService traffic, CancellationToken ct) =>
+            Results.Ok(await traffic.GetCurrentAsync(ct)));
+
+        group.MapGet("/here/quota", (IDirectionalTrafficService traffic) =>
+            Results.Ok(traffic.GetQuotaStatus()));
+
+        group.MapGet("/here/history", async (AppDbContext db, CancellationToken ct) =>
+        {
+            var snapshots = await db.TrafficSnapshots
+                .AsNoTracking()
+                .Include(x => x.BorderPoint)
+                .Where(x => x.SourceName.StartsWith("HERE:"))
+                .OrderByDescending(x => x.RecordedAtUtc)
+                .Take(300)
+                .ToListAsync(ct);
+
+            return Results.Ok(snapshots.Select(x =>
+            {
+                var direction = x.SourceName["HERE:".Length..];
+                return new HereHistoryDto
+                {
+                    Id = x.Id,
+                    BorderPointName = x.BorderPoint?.Name ?? "Inconnu",
+                    Direction = direction,
+                    DirectionLabel = direction == "ToGeneva" ? "France → Genève" : "Genève → France",
+                    ObservedAtUtc = x.RecordedAtUtc,
+                    DelayMinutes = x.EstimatedDelayMinutes,
+                    CongestionLevel = x.CongestionLevel.ToString()
+                };
+            }));
+        });
+
+        group.MapGet("/here/forecast", async (AppDbContext db, CancellationToken ct) =>
+        {
+            var rows = await db.TrafficSnapshots
+                .AsNoTracking()
+                .Where(x => x.SourceName.StartsWith("HERE:"))
+                .OrderBy(x => x.RecordedAtUtc)
+                .Select(x => new
+                {
+                    x.SourceName,
+                    x.RecordedAtUtc,
+                    x.EstimatedDelayMinutes
+                })
+                .ToListAsync(ct);
+
+            var localRows = rows.Select(x => new
+            {
+                x.SourceName,
+                LocalTime = ToGenevaLocalTime(x.RecordedAtUtc),
+                x.EstimatedDelayMinutes
+            }).ToList();
+
+            var daysCovered = localRows
+                .Select(x => DateOnly.FromDateTime(x.LocalTime))
+                .Distinct()
+                .Count();
+            const int minimumDays = 7;
+            var response = new TrafficForecastDto
+            {
+                SamplesCount = rows.Count,
+                DaysCovered = daysCovered,
+                MinimumDaysRequired = minimumDays
+            };
+
+            if (daysCovered < minimumDays || rows.Count < 100)
+            {
+                response.Message =
+                    $"Prévisions en apprentissage : {daysCovered}/{minimumDays} jours collectés et {rows.Count}/100 mesures.";
+                return Results.Ok(response);
+            }
+
+            var dayNames = new Dictionary<DayOfWeek, string>
+            {
+                [DayOfWeek.Monday] = "lundi",
+                [DayOfWeek.Tuesday] = "mardi",
+                [DayOfWeek.Wednesday] = "mercredi",
+                [DayOfWeek.Thursday] = "jeudi",
+                [DayOfWeek.Friday] = "vendredi",
+                [DayOfWeek.Saturday] = "samedi",
+                [DayOfWeek.Sunday] = "dimanche"
+            };
+
+            foreach (var direction in new[] { "ToGeneva", "ToFrance" })
+            {
+                var candidates = localRows
+                    .Where(x => x.SourceName == $"HERE:{direction}")
+                    .GroupBy(x => new
+                    {
+                        x.LocalTime.DayOfWeek,
+                        TwoHourBucket = x.LocalTime.Hour / 2 * 2
+                    })
+                    .Select(group => new
+                    {
+                        group.Key.DayOfWeek,
+                        Hour = group.Key.TwoHourBucket,
+                        Average = group.Average(x => x.EstimatedDelayMinutes),
+                        Samples = group.Count()
+                    })
+                    .Where(x => x.Samples >= 2)
+                    .OrderBy(x => x.Average)
+                    .FirstOrDefault();
+
+                if (candidates is null)
+                {
+                    continue;
+                }
+
+                var confidence = Math.Min(85, 35 + daysCovered * 3 + candidates.Samples * 3);
+                var label = direction == "ToGeneva" ? "France → Genève" : "Genève → France";
+                response.Suggestions.Add(new TrafficForecastSuggestionDto
+                {
+                    Direction = direction,
+                    DirectionLabel = label,
+                    BestDay = dayNames[candidates.DayOfWeek],
+                    BestHourStart = candidates.Hour,
+                    AverageDelayMinutes = (int)Math.Round(candidates.Average),
+                    SampleSize = candidates.Samples,
+                    ConfidencePercent = confidence,
+                    Advice =
+                        $"Pour le sens {label}, le créneau historiquement le plus fluide est {dayNames[candidates.DayOfWeek]} entre {candidates.Hour:00}h et {candidates.Hour + 2:00}h."
+                });
+            }
+
+            response.IsAvailable = response.Suggestions.Count > 0;
+            response.Message = response.IsAvailable
+                ? "Prévisions calculées sur l’historique HERE local ; elles ne garantissent pas les conditions futures."
+                : "Historique insuffisant pour produire une suggestion fiable.";
+            return Results.Ok(response);
+        });
+
         group.MapGet("/alerts", async (AppDbContext db, CancellationToken ct) =>
         {
             var alerts = await db.AlertEvents
@@ -240,5 +371,20 @@ public static class ApiEndpoints
         });
 
         return app;
+    }
+
+    private static DateTime ToGenevaLocalTime(DateTime value)
+    {
+        var utc = value.Kind == DateTimeKind.Utc
+            ? value
+            : DateTime.SpecifyKind(value, DateTimeKind.Utc);
+        try
+        {
+            return TimeZoneInfo.ConvertTimeFromUtc(utc, TimeZoneInfo.FindSystemTimeZoneById("Europe/Zurich"));
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.ConvertTimeFromUtc(utc, TimeZoneInfo.FindSystemTimeZoneById("W. Europe Standard Time"));
+        }
     }
 }

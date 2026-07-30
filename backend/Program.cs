@@ -10,6 +10,11 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (int.TryParse(Environment.GetEnvironmentVariable("PORT"), out var platformPort))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{platformPort}");
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 
@@ -65,10 +70,42 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.Configure<BotWorkerOptions>(builder.Configuration.GetSection("BotWorker"));
+builder.Services
+    .AddOptions<PreviewAccessOptions>()
+    .Bind(builder.Configuration.GetSection(PreviewAccessOptions.SectionName))
+    .Validate(options => !options.Enabled
+        || (!string.IsNullOrWhiteSpace(options.Username) && options.Password.Length >= 16),
+        "Preview access requires a username and a password of at least 16 characters.")
+    .ValidateOnStart();
+builder.Services
+    .AddOptions<HereTrafficOptions>()
+    .Bind(builder.Configuration.GetSection(HereTrafficOptions.SectionName))
+    .Validate(options => !options.Enabled || !string.IsNullOrWhiteSpace(options.ApiKey),
+        "Traffic:Here:ApiKey is required when HERE traffic is enabled.")
+    .Validate(options => options.CacheSeconds >= 1800,
+        "Traffic:Here:CacheSeconds must be at least 1800 to protect the free quota.")
+    .Validate(options => options.MaxRequestsPerDay is >= 14 and <= 700,
+        "Traffic:Here:MaxRequestsPerDay must be between 14 and 700.")
+    .ValidateOnStart();
 
 builder.Services.AddScoped<DbInitializer>();
 
-builder.Services.AddScoped<ITrafficDataProvider, FakeTrafficDataProvider>();
+if (builder.Configuration.GetValue<bool>("Traffic:SimulationEnabled"))
+{
+    builder.Services.AddScoped<ITrafficDataProvider, FakeTrafficDataProvider>();
+}
+else
+{
+    builder.Services.AddScoped<ITrafficDataProvider, UnavailableTrafficDataProvider>();
+}
+builder.Services.AddHttpClient("HereTraffic", (services, client) =>
+{
+    var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<HereTrafficOptions>>().Value;
+    client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(12);
+});
+builder.Services.AddSingleton<IDirectionalTrafficService, HereDirectionalTrafficService>();
+builder.Services.AddHostedService<DirectionalTrafficCollector>();
 builder.Services.AddScoped<ITrafficIngestionService, TrafficIngestionService>();
 builder.Services.AddScoped<ITrendAnalyzer, TrendAnalyzer>();
 builder.Services.AddScoped<IAlertEngine, AlertEngine>();
@@ -135,6 +172,9 @@ app.Use(async (context, next) =>
     await next();
 });
 
+app.UseMiddleware<PreviewAccessMiddleware>();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseCors("ViteCors");
 app.UseRateLimiter();
 app.UseAuthentication();
@@ -147,6 +187,7 @@ app.MapGet("/health", async (AppDbContext db, CancellationToken ct) =>
     .RequireRateLimiting("public");
 
 app.MapApiEndpoints();
+app.MapFallbackToFile("index.html");
 
 await using (var scope = app.Services.CreateAsyncScope())
 {

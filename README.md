@@ -1,7 +1,8 @@
 # Frontière Live GE
 
 Dashboard public et bot de surveillance des principaux passages frontaliers genevois.
-Les données sont actuellement simulées ; le provider est remplaçable sans modifier l'API.
+Les délais directionnels proviennent de HERE Routing avec trafic. La simulation est désactivée
+par défaut et n'est jamais utilisée comme repli silencieux.
 
 ## État
 
@@ -9,6 +10,9 @@ Les données sont actuellement simulées ; le provider est remplaçable sans mod
 - Frontend React, Vite et TypeScript strict
 - Routes de lecture publiques
 - Routes d'administration protégées par clé
+- Historique HERE par passage et par sens
+- Prévisions locales après au moins 7 jours et 100 mesures
+- Quota HERE protégé et visible dans l'onglet Alertes
 - Publication X désactivée par défaut
 - Tests et CI GitHub
 
@@ -32,6 +36,8 @@ Créer les secrets locaux :
 
 ```bash
 dotnet user-secrets set "Admin:ApiKey" "UNE_CLE_LONGUE_ET_ALEATOIRE" --project backend
+dotnet user-secrets set "Traffic:Here:ApiKey" "CLE_HERE" --project backend
+dotnet user-secrets set "Traffic:Here:Enabled" "true" --project backend
 ```
 
 ## Démarrage
@@ -64,6 +70,24 @@ Routes publiques :
 - `GET /api/live`
 - `GET /api/alerts`
 - `GET /api/history/{borderPointId}`
+- `GET /api/live/directions`
+- `GET /api/here/quota`
+- `GET /api/here/history`
+- `GET /api/here/forecast`
+
+## Garde-fous HERE
+
+- cache de 30 minutes partagé ;
+- verrou anti-rafale : un seul rafraîchissement complet à la fois ;
+- 14 routes interrogées séquentiellement pour rester sous la limite RPS ;
+- plafond local de 600 requêtes par jour, sous la limite Limited Plan de 1 000 ;
+- compteur persistant et blocage fermé si son état est illisible ;
+- avertissement à 75 %, alerte critique à 90 % ;
+- notification navigateur optionnelle dans l'onglet Alertes.
+
+Le plafond local ne remplace pas la configuration du compte HERE. Pour éviter une facturation,
+utilisez le **Limited Plan**, configurez les alertes dans **Billing & Usage**, réservez un App ID
+à cette application et révoquez immédiatement toute clé exposée.
 
 Routes protégées par l'en-tête `X-Admin-Key` :
 
