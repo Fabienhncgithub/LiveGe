@@ -17,11 +17,11 @@ COPY --from=frontend-build /src/frontend/dist/ /out/wwwroot/
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 WORKDIR /app
-RUN addgroup -S app && adduser -S -G app app \
+RUN addgroup -S livege && adduser -S -G livege livege \
     && mkdir -p /app/data \
-    && chown -R app:app /app
-COPY --from=backend-build --chown=app:app /out/ ./
-USER app
+    && chown -R livege:livege /app
+COPY --from=backend-build --chown=livege:livege /out/ ./
+USER livege
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV ASPNETCORE_URLS=http://0.0.0.0:8000
 EXPOSE 8000

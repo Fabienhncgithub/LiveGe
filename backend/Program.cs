@@ -232,6 +232,7 @@ app.MapGet("/health", async (AppDbContext db, CancellationToken ct) =>
     .RequireRateLimiting("public");
 
 app.MapApiEndpoints(builder.Configuration.GetValue<bool>("Admin:EndpointsEnabled"));
+app.Map("/api/{**path}", () => Results.NotFound());
 app.MapFallbackToFile("index.html");
 
 await using (var scope = app.Services.CreateAsyncScope())
