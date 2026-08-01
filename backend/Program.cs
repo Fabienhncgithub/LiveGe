@@ -113,7 +113,7 @@ builder.Services.AddSingleton<IDirectionalTrafficService, HereDirectionalTraffic
 builder.Services.AddHttpClient("GenevaRoadworks", client =>
 {
     client.BaseAddress = new Uri(
-        "https://app2.ge.ch/tergeoservices/rest/services/Hosted/INFOMOB_CHANTIER_POINT/FeatureServer/0/");
+        "https://vector.sitg.ge.ch/arcgis/rest/services/Hosted/INFOMOB_CHANTIER_POINT/FeatureServer/0/");
     client.Timeout = TimeSpan.FromSeconds(15);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("FrontiereLiveGE/1.0");
 });
