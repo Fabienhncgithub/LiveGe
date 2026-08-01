@@ -14,7 +14,9 @@ services:
         value: "false"
       - key: X__Enabled
         value: "false"
-      - key: Traffic__Here__Enabled
+      - key: Traffic__TomTom__Enabled
         value: "false"
+      - key: Traffic__TomTom__ApiKey
+        sync: false
       - key: Security__UseHttpsRedirection
         value: "false"

@@ -47,14 +47,14 @@ public static class ApiEndpoints
                 var snapshot = await db.TrafficSnapshots
                     .AsNoTracking()
                     .Where(x => x.BorderPointId == point.Id
-                        && x.SourceName == "HERE:ToGeneva")
+                        && x.SourceName == "TOMTOM:ToGeneva")
                     .OrderByDescending(x => x.RecordedAtUtc)
                     .FirstOrDefaultAsync(ct);
 
                 if (snapshot is null)
                 {
                     // Do not manufacture a green/zero-delay reading when no real
-                    // HERE snapshot exists for this crossing.
+                    // traffic snapshot exists for this crossing.
                     continue;
                 }
 
@@ -83,23 +83,23 @@ public static class ApiEndpoints
         group.MapGet("/live/advice", async (IMobilityAdviceService advice, CancellationToken ct) =>
             Results.Ok(await advice.GetCurrentAsync(ct)));
 
-        group.MapGet("/here/quota", (IDirectionalTrafficService traffic) =>
+        group.MapGet("/traffic/quota", (IDirectionalTrafficService traffic) =>
             Results.Ok(traffic.GetQuotaStatus()));
 
-        group.MapGet("/here/history", async (AppDbContext db, CancellationToken ct) =>
+        group.MapGet("/traffic/history", async (AppDbContext db, CancellationToken ct) =>
         {
             var snapshots = await db.TrafficSnapshots
                 .AsNoTracking()
                 .Include(x => x.BorderPoint)
-                .Where(x => x.SourceName.StartsWith("HERE:"))
+                .Where(x => x.SourceName.StartsWith("TOMTOM:"))
                 .OrderByDescending(x => x.RecordedAtUtc)
                 .Take(300)
                 .ToListAsync(ct);
 
             return Results.Ok(snapshots.Select(x =>
             {
-                var direction = x.SourceName["HERE:".Length..];
-                return new HereHistoryDto
+                var direction = x.SourceName["TOMTOM:".Length..];
+                return new TrafficHistoryDto
                 {
                     Id = x.Id,
                     BorderPointName = x.BorderPoint?.Name ?? "Inconnu",
@@ -112,11 +112,11 @@ public static class ApiEndpoints
             }));
         });
 
-        group.MapGet("/here/forecast", async (AppDbContext db, CancellationToken ct) =>
+        group.MapGet("/traffic/forecast", async (AppDbContext db, CancellationToken ct) =>
         {
             var rows = await db.TrafficSnapshots
                 .AsNoTracking()
-                .Where(x => x.SourceName.StartsWith("HERE:"))
+                .Where(x => x.SourceName.StartsWith("TOMTOM:"))
                 .OrderBy(x => x.RecordedAtUtc)
                 .Select(x => new
                 {
@@ -172,7 +172,7 @@ public static class ApiEndpoints
                          {
                              x.BorderPointId,
                              x.BorderPointName,
-                             Direction = x.SourceName["HERE:".Length..]
+                             Direction = x.SourceName["TOMTOM:".Length..]
                          })
                          .Distinct()
                          .OrderBy(x => x.BorderPointName)
@@ -180,7 +180,7 @@ public static class ApiEndpoints
             {
                 var candidates = localRows
                     .Where(x => x.BorderPointId == route.BorderPointId
-                        && x.SourceName == $"HERE:{route.Direction}")
+                        && x.SourceName == $"TOMTOM:{route.Direction}")
                     .GroupBy(x => new
                     {
                         x.LocalTime.DayOfWeek,
@@ -224,7 +224,7 @@ public static class ApiEndpoints
 
             response.IsAvailable = response.Suggestions.Count > 0;
             response.Message = response.IsAvailable
-                ? "Prévisions calculées sur l’historique HERE local ; elles ne garantissent pas les conditions futures."
+                ? "Prévisions calculées sur l’historique TomTom local ; elles ne garantissent pas les conditions futures."
                 : "Historique insuffisant pour produire une suggestion fiable.";
             return Results.Ok(response);
         });

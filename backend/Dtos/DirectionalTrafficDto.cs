@@ -11,7 +11,7 @@ public sealed class DirectionalTrafficDto
     public int? DelayMinutes { get; set; }
     public string CongestionLevel { get; set; } = "Unknown";
     public string Trend { get; set; } = "Unknown";
-    public string SourceName { get; set; } = "HERE Traffic";
+    public string SourceName { get; set; } = "TomTom Traffic";
     public DateTime? ObservedAtUtc { get; set; }
     public bool IsStale { get; set; }
     public int? AgeMinutes { get; set; }

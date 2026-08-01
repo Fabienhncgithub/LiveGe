@@ -3,14 +3,14 @@ using FrontiereLiveGe.Api.Enums;
 
 namespace FrontiereLiveGe.Api.Services;
 
-public sealed class HereTrafficDataProvider : ITrafficDataProvider
+public sealed class TomTomTrafficDataProvider : ITrafficDataProvider
 {
     private readonly IDirectionalTrafficService _traffic;
-    private readonly ILogger<HereTrafficDataProvider> _logger;
+    private readonly ILogger<TomTomTrafficDataProvider> _logger;
 
-    public HereTrafficDataProvider(
+    public TomTomTrafficDataProvider(
         IDirectionalTrafficService traffic,
-        ILogger<HereTrafficDataProvider> logger)
+        ILogger<TomTomTrafficDataProvider> logger)
     {
         _traffic = traffic;
         _logger = logger;
@@ -29,12 +29,12 @@ public sealed class HereTrafficDataProvider : ITrafficDataProvider
                 CongestionLevel = Enum.TryParse<CongestionLevel>(x.CongestionLevel, out var level)
                     ? level
                     : CongestionLevel.Green,
-                SourceName = $"HERE:{x.Direction}",
+                SourceName = $"TOMTOM:{x.Direction}",
                 RecordedAtUtc = x.ObservedAtUtc!.Value
             })
             .ToList();
 
-        _logger.LogInformation("Prepared {Count} real HERE readings for ingestion.", readings.Count);
+        _logger.LogInformation("Prepared {Count} real TomTom readings for ingestion.", readings.Count);
         return readings;
     }
 }

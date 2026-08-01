@@ -44,38 +44,38 @@ public sealed class MobilityAdviceService : IMobilityAdviceService
             .ToList();
 
         var quota = _traffic.GetQuotaStatus();
-        var hereAvailable = traffic.Count(x => x.IsAvailable);
-        var hereFresh = traffic.Count(x => x.IsAvailable && !x.IsStale);
-        var hereStatus = new DataSourceStatusDto
+        var tomTomAvailable = traffic.Count(x => x.IsAvailable);
+        var tomTomFresh = traffic.Count(x => x.IsAvailable && !x.IsStale);
+        var tomTomStatus = new DataSourceStatusDto
         {
-            Id = "here-traffic",
-            Name = "HERE Traffic",
-            Status = hereFresh > 0
+            Id = "tomtom-traffic",
+            Name = "TomTom Traffic",
+            Status = tomTomFresh > 0
                 ? "Online"
-                : hereAvailable > 0
+                : tomTomAvailable > 0
                     ? "Stale"
                     : "Unavailable",
             IsOfficial = false,
-            HasBillingRisk = true,
+            HasBillingRisk = false,
             RecordsCount = traffic.Count,
-            RelevantSignalsCount = hereAvailable,
+            RelevantSignalsCount = tomTomAvailable,
             CheckedAtUtc = DateTime.UtcNow,
             DataTimestampUtc = traffic.Where(x => x.ObservedAtUtc.HasValue)
                 .Select(x => x.ObservedAtUtc)
                 .Max(),
             Coverage = "Temps de parcours sur les routes d’approche, passage frontalier imposé.",
-            Attribution = "Source : HERE Traffic",
-            SourceUrl = "https://www.here.com/",
-            Message = hereAvailable > 0
-                ? $"{quota.RequestsUsed}/{quota.DailyLimit} appels locaux utilisés aujourd’hui."
-                : "Aucune mesure HERE en cache. Le collecteur de fond doit réussir un cycle."
+            Attribution = "Source : TomTom Traffic",
+            SourceUrl = "https://www.tomtom.com/traffic-index/",
+            Message = tomTomAvailable > 0
+                ? $"{quota.RequestsUsed}/{quota.MonthlyLimit} appels locaux utilisés ce mois."
+                : "Aucune mesure TomTom en cache. Le collecteur de fond doit réussir un cycle."
         };
 
         return new MobilityAdviceDto
         {
             GeneratedAtUtc = DateTime.UtcNow,
             Routes = routes,
-            Sources = [hereStatus, .. publicSources],
+            Sources = [tomTomStatus, .. publicSources],
             Signals = relevantSignals
         };
     }
@@ -117,7 +117,7 @@ public sealed class MobilityAdviceService : IMobilityAdviceService
                 Label = reading.IsStale
                     ? $"+{reading.DelayMinutes ?? 0} min sur la dernière mesure disponible ({reading.AgeMinutes ?? 0} min)"
                     : $"+{reading.DelayMinutes ?? 0} min mesurées sur l’approche frontalière",
-                SourceName = "HERE Traffic",
+                SourceName = reading.SourceName,
                 Severity = reading.IsStale ? "Warning" : reading.CongestionLevel
             });
         }

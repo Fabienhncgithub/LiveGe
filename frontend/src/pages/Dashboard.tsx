@@ -374,7 +374,7 @@ export default function Dashboard() {
             <strong>Ce que le conseil compare</strong>
             <p>{advice.scopeNotice}</p>
             <span>
-              Retard HERE + proximité des travaux et événements publics + contexte météo ·
+              Retard TomTom + proximité des travaux et événements publics + contexte météo ·
               algorithme {advice.algorithmVersion}
             </span>
           </section>

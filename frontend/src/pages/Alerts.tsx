@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { fetchAlerts, fetchHereHistory, fetchHereQuota, fetchTrafficForecast } from '../api/borderApi'
+import { fetchAlerts, fetchTrafficForecast, fetchTrafficHistory, fetchTrafficQuota } from '../api/borderApi'
 import AlertList from '../components/AlertList'
-import type { AlertEvent, HereHistoryEntry, HereQuotaStatus, TrafficForecast } from '../types'
+import type { AlertEvent, TrafficForecast, TrafficHistoryEntry, TrafficQuotaStatus } from '../types'
 import { parseUtcDate } from '../utils/date'
 
 export default function Alerts() {
   const [alerts, setAlerts] = useState<AlertEvent[]>([])
-  const [history, setHistory] = useState<HereHistoryEntry[]>([])
-  const [quota, setQuota] = useState<HereQuotaStatus | null>(null)
+  const [history, setHistory] = useState<TrafficHistoryEntry[]>([])
+  const [quota, setQuota] = useState<TrafficQuotaStatus | null>(null)
   const [forecast, setForecast] = useState<TrafficForecast | null>(null)
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     () => typeof Notification !== 'undefined' && Notification.permission === 'granted'
@@ -20,8 +20,8 @@ export default function Alerts() {
       setError(null)
       const [alertData, historyData, quotaData, forecastData] = await Promise.all([
         fetchAlerts(),
-        fetchHereHistory(),
-        fetchHereQuota(),
+        fetchTrafficHistory(),
+        fetchTrafficQuota(),
         fetchTrafficForecast()
       ])
       setAlerts(alertData)
@@ -44,11 +44,11 @@ export default function Alerts() {
   useEffect(() => {
     if (!quota || quota.level === 'Normal' || !notificationsEnabled) return
 
-    const notificationKey = `here-quota:${quota.dateUtc}:${quota.level}`
+    const notificationKey = `tomtom-quota:${quota.monthUtc}:${quota.level}`
     if (localStorage.getItem(notificationKey)) return
 
-    new Notification(`Quota HERE · ${quota.usagePercent}%`, {
-      body: `${quota.requestsUsed}/${quota.dailyLimit} appels utilisés. ${quota.message}`
+    new Notification(`Quota TomTom · ${quota.usagePercent}%`, {
+      body: `${quota.requestsUsed}/${quota.monthlyLimit} appels utilisés. ${quota.message}`
     })
     localStorage.setItem(notificationKey, 'sent')
   }, [notificationsEnabled, quota])
@@ -65,7 +65,7 @@ export default function Alerts() {
         <div>
           <span className="section-kicker">Suivi & anticipation</span>
           <h1>Alertes trafic</h1>
-          <p className="subtitle">Historique HERE, consommation du quota et créneaux à privilégier.</p>
+          <p className="subtitle">Historique TomTom, consommation du quota et créneaux à privilégier.</p>
         </div>
         <button className="refresh-button" onClick={() => void load()} disabled={loading}>Actualiser</button>
       </div>
@@ -77,8 +77,8 @@ export default function Alerts() {
           {quota && (
             <section className={`quota-card quota-card--${quota.level.toLowerCase()}`}>
               <div>
-                <span className="section-kicker">Garde-fou HERE</span>
-                <h2>{quota.requestsUsed} <small>/ {quota.dailyLimit} appels aujourd’hui</small></h2>
+                <span className="section-kicker">Garde-fou TomTom</span>
+                <h2>{quota.requestsUsed} <small>/ {quota.monthlyLimit} appels ce mois</small></h2>
                 <p>{quota.message}</p>
                 {!notificationsEnabled && (
                   <button className="quota-notification-button" onClick={() => void enableNotifications()}>
@@ -120,11 +120,11 @@ export default function Alerts() {
 
           <section className="history-panel">
             <div className="history-panel__header">
-              <div><span className="section-kicker">Mesures réelles</span><h2>Historique HERE</h2></div>
+              <div><span className="section-kicker">Mesures réelles</span><h2>Historique TomTom</h2></div>
               <span>{history.length} derniers relevés</span>
             </div>
             {history.length === 0 ? (
-              <p className="empty-state">La première mesure sera enregistrée au prochain cycle HERE.</p>
+              <p className="empty-state">La première mesure sera enregistrée au prochain cycle TomTom.</p>
             ) : (
               <div className="history-table">
                 {history.slice(0, 100).map((entry) => (

@@ -6,7 +6,7 @@ namespace FrontiereLiveGe.Api.Tests;
 public sealed class MobilityAdviceServiceTests
 {
     [Fact]
-    public void BuildRoute_CombinesHereDelayWithNearbyAndGlobalContext()
+    public void BuildRoute_CombinesTomTomDelayWithNearbyAndGlobalContext()
     {
         var reading = Traffic("Bardonnex", "ToGeneva", delayMinutes: 4);
         var corridor = Assert.IsType<BorderCorridorCatalog.BorderCorridor>(
@@ -49,7 +49,7 @@ public sealed class MobilityAdviceServiceTests
         Assert.DoesNotContain("near-roadwork-duplicate", route.NearbySignalIds);
         Assert.Contains("weather", route.NearbySignalIds);
         Assert.DoesNotContain("remote-roadwork", route.NearbySignalIds);
-        Assert.Contains(route.Reasons, reason => reason.SourceName == "HERE Traffic");
+        Assert.Contains(route.Reasons, reason => reason.SourceName == "TomTom Traffic");
         Assert.Contains(route.Reasons, reason => reason.SourceName == "MétéoSuisse — Cointrin");
     }
 
@@ -166,7 +166,7 @@ public sealed class MobilityAdviceServiceTests
     }
 
     [Fact]
-    public void BuildRoute_ReducesCoverageForStaleHereReading()
+    public void BuildRoute_ReducesCoverageForStaleTomTomReading()
     {
         var reading = Traffic("Bardonnex", "ToGeneva", 2);
         reading.IsStale = true;

@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // Query-string API keys must never appear in routine HttpClient request logs.
-builder.Logging.AddFilter("System.Net.Http.HttpClient.HereTraffic", LogLevel.Warning);
+builder.Logging.AddFilter("System.Net.Http.HttpClient.TomTomTraffic", LogLevel.Warning);
 
 if (int.TryParse(Environment.GetEnvironmentVariable("PORT"), out var platformPort))
 {
@@ -87,29 +87,29 @@ builder.Services
         "Preview access requires a username and a password of at least 16 characters.")
     .ValidateOnStart();
 builder.Services
-    .AddOptions<HereTrafficOptions>()
-    .Bind(builder.Configuration.GetSection(HereTrafficOptions.SectionName))
+    .AddOptions<TomTomTrafficOptions>()
+    .Bind(builder.Configuration.GetSection(TomTomTrafficOptions.SectionName))
     .Validate(options => !options.Enabled || !string.IsNullOrWhiteSpace(options.ApiKey),
-        "Traffic:Here:ApiKey is required when HERE traffic is enabled.")
+        "Traffic:TomTom:ApiKey is required when TomTom traffic is enabled.")
     .Validate(options => options.CacheSeconds >= 1800,
-        "Traffic:Here:CacheSeconds must be at least 1800 to protect the free quota.")
-    .Validate(options => options.MaxRequestsPerDay is >= 14 and <= 600,
-        "Traffic:Here:MaxRequestsPerDay must be between 14 and 600.")
+        "Traffic:TomTom:CacheSeconds must be at least 1800 to protect the free quota.")
+    .Validate(options => options.MaxRequestsPerMonth is >= 14 and <= 20000,
+        "Traffic:TomTom:MaxRequestsPerMonth must be between 14 and 20000.")
     .Validate(options => !options.Enabled
-        || IsAllowedHttpsEndpoint(options.BaseUrl, "router.hereapi.com"),
-        "Traffic:Here:BaseUrl must use https://router.hereapi.com.")
+        || IsAllowedHttpsEndpoint(options.BaseUrl, "api.tomtom.com"),
+        "Traffic:TomTom:BaseUrl must use https://api.tomtom.com.")
     .ValidateOnStart();
 
 builder.Services.AddScoped<DbInitializer>();
 
-builder.Services.AddScoped<ITrafficDataProvider, HereTrafficDataProvider>();
-builder.Services.AddHttpClient("HereTraffic", (services, client) =>
+builder.Services.AddScoped<ITrafficDataProvider, TomTomTrafficDataProvider>();
+builder.Services.AddHttpClient("TomTomTraffic", (services, client) =>
 {
-    var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<HereTrafficOptions>>().Value;
+    var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<TomTomTrafficOptions>>().Value;
     client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(12);
 });
-builder.Services.AddSingleton<IDirectionalTrafficService, HereDirectionalTrafficService>();
+builder.Services.AddSingleton<IDirectionalTrafficService, TomTomDirectionalTrafficService>();
 builder.Services.AddHttpClient("GenevaRoadworks", client =>
 {
     client.BaseAddress = new Uri(

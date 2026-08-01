@@ -1,10 +1,10 @@
 namespace FrontiereLiveGe.Api.Dtos;
 
-public sealed class HereQuotaStatusDto
+public sealed class TrafficQuotaStatusDto
 {
-    public DateOnly DateUtc { get; set; }
+    public string MonthUtc { get; set; } = string.Empty;
     public int RequestsUsed { get; set; }
-    public int DailyLimit { get; set; }
+    public int MonthlyLimit { get; set; }
     public int RequestsRemaining { get; set; }
     public int UsagePercent { get; set; }
     public string Level { get; set; } = "Normal";

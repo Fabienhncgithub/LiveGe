@@ -122,10 +122,10 @@ export interface MobilityAdvice {
   signals: RoadSignal[]
 }
 
-export interface HereQuotaStatus {
-  dateUtc: string
+export interface TrafficQuotaStatus {
+  monthUtc: string
   requestsUsed: number
-  dailyLimit: number
+  monthlyLimit: number
   requestsRemaining: number
   usagePercent: number
   level: 'Normal' | 'Warning' | 'Critical'
@@ -133,7 +133,7 @@ export interface HereQuotaStatus {
   resetsAtUtc: string
 }
 
-export interface HereHistoryEntry {
+export interface TrafficHistoryEntry {
   id: number
   borderPointName: string
   direction: 'ToGeneva' | 'ToFrance'

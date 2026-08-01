@@ -9,8 +9,8 @@ public class MessageFormatter : IMessageFormatter
     {
         var direction = latest.SourceName switch
         {
-            "HERE:ToGeneva" => "France → Genève",
-            "HERE:ToFrance" => "Genève → France",
+            "TOMTOM:ToGeneva" => "France → Genève",
+            "TOMTOM:ToFrance" => "Genève → France",
             _ => "approche frontalière"
         };
         var baseMessage =

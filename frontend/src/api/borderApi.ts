@@ -4,8 +4,8 @@ import type {
   BorderPoint,
   BotSettings,
   DirectionalTraffic,
-  HereHistoryEntry,
-  HereQuotaStatus,
+  TrafficHistoryEntry,
+  TrafficQuotaStatus,
   LiveBorderStatus,
   MobilityAdvice,
   RunSummary,
@@ -21,11 +21,11 @@ export const fetchDirectionalTraffic = () => getJson<DirectionalTraffic[]>('/api
 
 export const fetchMobilityAdvice = () => getJson<MobilityAdvice>('/api/live/advice')
 
-export const fetchHereQuota = () => getJson<HereQuotaStatus>('/api/here/quota')
+export const fetchTrafficQuota = () => getJson<TrafficQuotaStatus>('/api/traffic/quota')
 
-export const fetchHereHistory = () => getJson<HereHistoryEntry[]>('/api/here/history')
+export const fetchTrafficHistory = () => getJson<TrafficHistoryEntry[]>('/api/traffic/history')
 
-export const fetchTrafficForecast = () => getJson<TrafficForecast>('/api/here/forecast')
+export const fetchTrafficForecast = () => getJson<TrafficForecast>('/api/traffic/forecast')
 
 export const fetchAlerts = () => getJson<AlertEvent[]>('/api/alerts')
 

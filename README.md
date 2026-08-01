@@ -10,17 +10,17 @@ the API reports that source as unavailable or stale.
 ## What the app does
 
 - Measures both `France → Geneva` and `Geneva → France` approaches at seven crossings.
-- Forces each HERE route through the selected crossing instead of letting the router choose
+- Forces each TomTom route through the selected crossing instead of letting the router choose
   a neighbouring border.
 - Adds nearby roadworks and incidents plus weather conditions to the decision.
 - Explains each recommendation and exposes the status, scope, and attribution of every source.
-- Stores HERE measurements for alerts, trends, and local time-slot forecasts.
+- Stores TomTom measurements for alerts, trends, and local time-slot forecasts.
 - Can publish selected alerts to X; publishing is disabled by default.
 
 The `fusion-v1` score is deliberately simple and auditable:
 
 ```text
-decision cost = HERE delay in minutes × 4 + contextual risk points
+decision cost = TomTom delay in minutes × 4 + contextual risk points
 ```
 
 Routes are compared only within the same direction. A route is marked as recommended only
@@ -31,13 +31,13 @@ nearby event or a delay of at least 15 minutes marks an approach as one to avoid
 
 | Source | Purpose | Refresh/cache | Cost and licence | Important coverage limit |
 | --- | --- | --- | --- | --- |
-| [HERE Routing](https://www.here.com/) | Directional travel and free-flow times | Collected in the background; 30-minute cache | API key and HERE account plan required; billing is possible | Measures the configured approach segments, not a user's full trip |
+| [TomTom Routing](https://www.tomtom.com/products/routing-apis/) | Directional live-traffic and free-flow times | Collected in the background; 30-minute cache | Free monthly allowance with an API key; no payment card required for the free plan | Measures the configured approach segments, not a user's full trip |
 | [SITG InfoMobilité](https://sitg.ge.ch/donnees/pcmob-chantier-consult) | Important Geneva roadworks | 30 minutes | [SITG level A open-data terms](https://sitg.ge.ch/ressources/conditions-utilisation-donnees): commercial reuse is allowed with source, extraction frequency, and transformation attribution | Announced roadworks, updated daily; not a live congestion feed. The dataset is indicative and restricted to coordination purposes |
 | [Bison Futé open DATEX II feed](https://transport.data.gouv.fr/datasets/evenements-routiers-sur-le-reseau-routier-national-non-concede) | French road events | 10 minutes | Free, Licence Ouverte 2.0; attribution retained | Covers the non-concession national network. It does **not** provide reliable coverage of concession roads such as the A40/A41, or every departmental border road |
 | [MeteoSwiss Open Data](https://opendatadocs.meteoswiss.ch/general/terms-of-use) | Rain, gusts, temperature, and snow observations | 10 minutes | Free, CC BY 4.0; `Source: MeteoSwiss` attribution retained | One Geneva/Cointrin station is used; it cannot describe every local microclimate |
 
-SITG, Bison Futé, and MeteoSwiss require no API key and have no billing path in this
-application. HERE is the only configured source with billing risk.
+SITG, Bison Futé, and MeteoSwiss require no API key. TomTom uses a free account key. The
+application enforces a conservative monthly request ceiling below the documented free allowance.
 
 The interactive basemap uses [OpenFreeMap](https://openfreemap.org/) vector tiles. Its
 public instance currently requires no key, allows commercial use, and has no request limit,
@@ -57,16 +57,16 @@ police instructions, and official closure notices.
 ## Architecture
 
 ```text
-Background collector ── HERE directional routes ── local history / alerts / X
-                                             │
-Public advice request ─ cached HERE ─────────┼── fusion-v1 ── /api/live/advice
+Background collector ── TomTom directional routes ── local history / alerts / X
+                                                │
+Public advice request ─ cached TomTom ──────────┼── fusion-v1 ── /api/live/advice
                       ├ SITG roadworks ──────┤
                       ├ Bison Futé events ───┤
                       └ MeteoSwiss weather ──┘
 ```
 
-The public advice endpoint reads HERE data from the shared cache; it does not initiate
-billable HERE calls. Free public providers use independent caches and an anti-stampede lock.
+The public advice endpoint reads TomTom data from the shared cache; it does not initiate
+upstream routing calls. Free public providers use independent caches and an anti-stampede lock.
 If a refresh fails, the last successful result is returned as `Stale` when available.
 
 Main components:
@@ -77,7 +77,7 @@ Main components:
 - xUnit tests and GitHub Actions CI
 
 SQLite is appropriate for one application instance with a persistent volume. Multiple
-instances require a shared database, a distributed refresh lock, and a global HERE budget
+instances require a shared database, a distributed refresh lock, and a global TomTom budget
 counter.
 
 ## Prerequisites
@@ -100,8 +100,8 @@ Store secrets outside the repository:
 
 ```bash
 dotnet user-secrets set "Admin:ApiKey" "A_LONG_RANDOM_VALUE" --project backend
-dotnet user-secrets set "Traffic:Here:ApiKey" "YOUR_HERE_KEY" --project backend
-dotnet user-secrets set "Traffic:Here:Enabled" "true" --project backend
+dotnet user-secrets set "Traffic:TomTom:ApiKey" "YOUR_TOMTOM_KEY" --project backend
+dotnet user-secrets set "Traffic:TomTom:Enabled" "true" --project backend
 ```
 
 Never put API keys, OAuth secrets, or production passwords in `appsettings.json`, frontend
@@ -131,15 +131,15 @@ The Administration page asks for `Admin:ApiKey` and keeps it only in the browser
 - `GET /health`
 - `GET /api/border-points`
 - `GET /api/live`
-- `GET /api/live/directions` — latest cached HERE measurements
+- `GET /api/live/directions` — latest cached TomTom measurements
 - `GET /api/live/advice` — fused recommendations, reasons, signals, and source status
 - `GET /api/alerts`
 - `GET /api/history/{borderPointId}`
-- `GET /api/here/quota`
-- `GET /api/here/history`
-- `GET /api/here/forecast`
+- `GET /api/traffic/quota`
+- `GET /api/traffic/history`
+- `GET /api/traffic/forecast`
 
-The route-time forecast appears only after at least seven days and 100 HERE measurements.
+The route-time forecast appears only after at least seven days and 100 TomTom measurements.
 It is a historical pattern, not a guarantee of future traffic.
 
 ## Protected administration API
@@ -174,63 +174,59 @@ container. A Render `free` web service can deploy the complete demo from the inc
 Before confirming the deployment:
 
 1. verify that the instance plan is `free`;
-2. deploy first with HERE disabled;
-3. add a newly rotated HERE key as the secret `Traffic__Here__ApiKey`;
-4. set `Traffic__Here__Enabled=true` only after provider-side quota and billing alerts are
-   configured;
+2. deploy first with TomTom disabled;
+3. add a dedicated TomTom key as the secret `Traffic__TomTom__ApiKey`;
+4. set `Traffic__TomTom__Enabled=true`;
 5. keep `Admin__EndpointsEnabled=false` and `X__Enabled=false` for the public preview.
 
 Free Render services scale down after inactivity and have ephemeral local storage.
-Consequently, SQLite history and the local HERE budget counter disappear after sleep,
+Consequently, SQLite history and the local TomTom budget counter disappear after sleep,
 restart, or deployment. This tier is suitable for user testing, not for a durable production
-service. Do not enable a billable HERE key on ephemeral hosting unless the HERE account itself
-enforces a hard limit; an application-local counter alone is not a billing guarantee.
+service. Keep the TomTom account on its free plan and monitor its provider-side usage.
 
-## HERE cost safeguards
+## TomTom quota safeguards
 
 The repository defaults are intentionally conservative:
 
 - one shared 30-minute cache;
 - one refresh lock to prevent concurrent request bursts;
 - 14 route requests per complete collection cycle, sent sequentially;
-- a 40-minute background interval (at most 504 scheduled calls in 24 hours);
-- a persistent local ceiling of 600 HERE requests per UTC day;
+- a 45-minute background interval (at most 448 scheduled calls in 24 hours);
+- a persistent local ceiling of 18,000 TomTom requests per UTC month;
 - fail-closed behaviour if the local budget state cannot be read;
 - warning at 75% and critical status at 90%.
 
-These controls reduce risk, but **cannot guarantee a zero invoice**:
+These controls keep this application's scheduled use below TomTom's documented free allowance:
 
 - the counter is local to this application and does not see calls made with the same key
   elsewhere;
 - deleting or replacing its persistent state can reset the local count;
 - every extra application instance has its own counter unless a shared store is implemented;
-- HERE pricing, plan allowances, and account settings remain authoritative.
+- TomTom pricing, plan allowances, and account settings remain authoritative.
 
-To keep the risk controlled, use a dedicated HERE application/key, keep the budget state on
-a persistent volume, do not scale the worker horizontally, configure provider-side usage and
-billing alerts, and verify the current HERE plan and hard limits in the HERE account before
-deployment.
+Use a dedicated TomTom application/key, keep the budget state on a persistent volume, do not
+scale the worker horizontally, and verify the current free allowance in the TomTom account.
 
 Relevant settings can be overridden with environment variables:
 
 ```text
-Traffic__Here__Enabled
-Traffic__Here__ApiKey
-Traffic__Here__CacheSeconds
-Traffic__Here__MaxRequestsPerDay
-Traffic__Here__BudgetStatePath
-Traffic__Here__WarningThresholdPercent
-Traffic__Here__CriticalThresholdPercent
+Traffic__TomTom__Enabled
+Traffic__TomTom__ApiKey
+Traffic__TomTom__CacheSeconds
+Traffic__TomTom__MaxRequestsPerMonth
+Traffic__TomTom__BudgetStatePath
+Traffic__TomTom__WarningThresholdPercent
+Traffic__TomTom__CriticalThresholdPercent
 BotWorker__IntervalMinutes
 ```
 
-Do not reduce `BotWorker__IntervalMinutes` without recalculating the daily request budget.
+Do not reduce `BotWorker__IntervalMinutes` without recalculating the monthly request budget.
 
 ## Public-feed and parser safeguards
 
 - Source URLs are fixed HTTPS endpoints, not user-supplied URLs.
-- Traffic ingestion has no demo/simulation branch: missing HERE data stays unavailable.
-- Response size limits are 2 MB for SITG, 8 MB for Bison Futé, and 500 KB for MeteoSwiss.
+- Traffic ingestion has no demo/simulation branch: missing TomTom data stays unavailable.
+- Response size limits are 1 MB for TomTom, 2 MB for SITG, 8 MB for Bison Futé, and 500 KB for MeteoSwiss.
 - DATEX II XML disables DTD processing and external entity resolution.
 - Bison Futé direction metadata is matched to the travel direction; future events beyond
   24 hours are ignored and nearer planned events cannot trigger a closure-level decision early.

@@ -6,5 +6,5 @@ public interface IDirectionalTrafficService
 {
     Task<IReadOnlyList<DirectionalTrafficDto>> GetCachedAsync(CancellationToken ct);
     Task<IReadOnlyList<DirectionalTrafficDto>> RefreshAsync(CancellationToken ct);
-    HereQuotaStatusDto GetQuotaStatus();
+    TrafficQuotaStatusDto GetQuotaStatus();
 }

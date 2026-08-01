@@ -1,29 +1,30 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using FrontiereLiveGe.Api.Dtos;
 using Microsoft.Extensions.Options;
 
 namespace FrontiereLiveGe.Api.Services;
 
-public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
+public sealed class TomTomDirectionalTrafficService : IDirectionalTrafficService
 {
+    private const int MaximumResponseBytes = 1_000_000;
     private readonly HttpClient _http;
-    private readonly HereTrafficOptions _options;
-    private readonly ILogger<HereDirectionalTrafficService> _logger;
+    private readonly TomTomTrafficOptions _options;
+    private readonly ILogger<TomTomDirectionalTrafficService> _logger;
     private readonly string _budgetStatePath;
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
     private readonly object _budgetLock = new();
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
-    public HereDirectionalTrafficService(
+    public TomTomDirectionalTrafficService(
         IHttpClientFactory httpClientFactory,
-        IOptions<HereTrafficOptions> options,
+        IOptions<TomTomTrafficOptions> options,
         IHostEnvironment environment,
-        ILogger<HereDirectionalTrafficService> logger)
+        ILogger<TomTomDirectionalTrafficService> logger)
     {
-        _http = httpClientFactory.CreateClient("HereTraffic");
+        _http = httpClientFactory.CreateClient("TomTomTraffic");
         _options = options.Value;
         _logger = logger;
 
@@ -38,7 +39,7 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
                     : StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                "Traffic:Here:BudgetStatePath must stay inside the application content root.");
+                "Traffic:TomTom:BudgetStatePath must stay inside the application content root.");
         }
     }
 
@@ -62,8 +63,8 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
             return BorderCorridorCatalog.All
                 .SelectMany(c => new[]
                 {
-                    Unavailable(c.Name, "ToGeneva", "France → Genève", "Clé HERE non configurée."),
-                    Unavailable(c.Name, "ToFrance", "Genève → France", "Clé HERE non configurée.")
+                    Unavailable(c.Name, "ToGeneva", "France → Genève", "Clé TomTom non configurée."),
+                    Unavailable(c.Name, "ToFrance", "Genève → France", "Clé TomTom non configurée.")
                 })
                 .ToList();
         }
@@ -101,30 +102,34 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
         }
     }
 
-    public HereQuotaStatusDto GetQuotaStatus()
+    public TrafficQuotaStatusDto GetQuotaStatus()
     {
         lock (_budgetLock)
         {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            var limit = Math.Clamp(_options.MaxRequestsPerDay, 14, 600);
+            var now = DateTime.UtcNow;
+            var month = new DateOnly(now.Year, now.Month, 1);
+            var limit = Math.Clamp(_options.MaxRequestsPerMonth, 14, 20000);
             var used = 0;
             var stateReadable = true;
 
             try
             {
-                var statePath = _budgetStatePath;
-                if (File.Exists(statePath))
+                if (File.Exists(_budgetStatePath))
                 {
-                    var parts = File.ReadAllText(statePath).Trim().Split('|', 2);
-                    var storedDate = default(DateOnly);
+                    var parts = File.ReadAllText(_budgetStatePath).Trim().Split('|', 2);
+                    var storedMonth = default(DateOnly);
                     var storedCount = 0;
                     stateReadable = parts.Length == 2
-                        && DateOnly.TryParseExact(parts[0], "yyyy-MM-dd", CultureInfo.InvariantCulture,
-                            DateTimeStyles.None, out storedDate)
+                        && DateOnly.TryParseExact(
+                            parts[0],
+                            "yyyy-MM-dd",
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.None,
+                            out storedMonth)
                         && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out storedCount)
                         && storedCount >= 0;
 
-                    if (stateReadable && storedDate == today)
+                    if (stateReadable && storedMonth == month)
                     {
                         used = storedCount;
                     }
@@ -132,7 +137,7 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                _logger.LogError(ex, "HERE budget state cannot be read.");
+                _logger.LogError(ex, "TomTom budget state cannot be read.");
                 stateReadable = false;
             }
 
@@ -145,22 +150,22 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
             var message = level switch
             {
                 "Critical" => stateReadable
-                    ? "Quota HERE presque épuisé : les appels seront bloqués automatiquement à la limite."
-                    : "Compteur HERE illisible : les appels sont bloqués par sécurité.",
-                "Warning" => "Quota HERE à surveiller : le cache limite automatiquement les prochains appels.",
-                _ => "Quota HERE sous contrôle."
+                    ? "Quota TomTom presque épuisé : les appels sont bloqués automatiquement à la limite."
+                    : "Compteur TomTom illisible : les appels sont bloqués par sécurité.",
+                "Warning" => "Quota TomTom à surveiller : le cache limite automatiquement les prochains appels.",
+                _ => "Quota TomTom sous contrôle."
             };
 
-            return new HereQuotaStatusDto
+            return new TrafficQuotaStatusDto
             {
-                DateUtc = today,
+                MonthUtc = month.ToString("yyyy-MM", CultureInfo.InvariantCulture),
                 RequestsUsed = used,
-                DailyLimit = limit,
+                MonthlyLimit = limit,
                 RequestsRemaining = Math.Max(0, limit - used),
                 UsagePercent = percent,
                 Level = level,
                 Message = message,
-                ResetsAtUtc = today.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
+                ResetsAtUtc = month.AddMonths(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
             };
         }
     }
@@ -176,53 +181,67 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
     {
         var cacheKey = $"{borderName}|{direction}";
         if (_cache.TryGetValue(cacheKey, out var cached)
-            && DateTime.UtcNow - cached.StoredAtUtc < TimeSpan.FromSeconds(Math.Clamp(_options.CacheSeconds, 1800, 3600)))
+            && DateTime.UtcNow - cached.StoredAtUtc < CacheDuration())
         {
             return cached.Value;
         }
 
-        var coordinates = string.Create(CultureInfo.InvariantCulture,
-            $"routes?transportMode=car&origin={origin.Latitude:F6},{origin.Longitude:F6}" +
-            $"&via={crossing.Latitude:F6},{crossing.Longitude:F6}" +
-            $"&destination={destination.Latitude:F6},{destination.Longitude:F6}&return=summary");
-        var url = $"{coordinates}&apiKey={Uri.EscapeDataString(_options.ApiKey)}";
+        var locations = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{origin.Latitude:F6},{origin.Longitude:F6}:" +
+            $"{crossing.Latitude:F6},{crossing.Longitude:F6}:" +
+            $"{destination.Latitude:F6},{destination.Longitude:F6}");
+        var url =
+            $"calculateRoute/{locations}/json?key={Uri.EscapeDataString(_options.ApiKey)}" +
+            "&traffic=true&routeType=fastest&travelMode=car" +
+            "&routeRepresentation=summaryOnly&computeTravelTimeFor=all";
 
         try
         {
             if (!TryReserveRequest())
             {
-                _logger.LogWarning("HERE daily request budget reached; request blocked locally.");
+                _logger.LogWarning("TomTom monthly request budget reached; request blocked locally.");
                 return _cache.TryGetValue(cacheKey, out cached)
-                    ? AsStale(cached, "Plafond quotidien HERE atteint ; dernière mesure conservée.")
-                    : Unavailable(borderName, direction, label, "Plafond quotidien HERE atteint.");
+                    ? AsStale(cached, "Plafond mensuel TomTom atteint ; dernière mesure conservée.")
+                    : Unavailable(borderName, direction, label, "Plafond mensuel TomTom atteint.");
             }
 
-            using var response = await _http.GetAsync(url, ct);
+            using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("HERE route request failed for {Border}/{Direction}: HTTP {Status}.",
-                    borderName, direction, (int)response.StatusCode);
+                _logger.LogWarning(
+                    "TomTom route request failed for {Border}/{Direction}: HTTP {Status}.",
+                    borderName,
+                    direction,
+                    (int)response.StatusCode);
                 return _cache.TryGetValue(cacheKey, out cached)
-                    ? AsStale(cached, $"HERE a répondu HTTP {(int)response.StatusCode} ; dernière mesure conservée.")
-                    : Unavailable(borderName, direction, label, $"HERE a répondu HTTP {(int)response.StatusCode}.");
+                    ? AsStale(cached, $"TomTom a répondu HTTP {(int)response.StatusCode} ; dernière mesure conservée.")
+                    : Unavailable(borderName, direction, label, $"TomTom a répondu HTTP {(int)response.StatusCode}.");
             }
 
-            var payload = await response.Content.ReadFromJsonAsync<HereRoutesResponse>(cancellationToken: ct);
-            var summaries = payload?.Routes.FirstOrDefault()?.Sections
-                .Select(x => x.Summary)
-                .Where(x => x is not null)
-                .Select(x => x!)
-                .ToList();
-            if (summaries is null || summaries.Count == 0)
+            if (response.Content.Headers.ContentLength is > MaximumResponseBytes)
+            {
+                throw new InvalidDataException("TomTom response exceeded the 1 MB safety limit.");
+            }
+
+            await response.Content.LoadIntoBufferAsync(MaximumResponseBytes, ct);
+            await using var stream = await response.Content.ReadAsStreamAsync(ct);
+            var payload = await JsonSerializer.DeserializeAsync<TomTomRoutesResponse>(stream, cancellationToken: ct);
+            var summary = payload?.Routes.FirstOrDefault()?.Summary;
+            if (summary is null || summary.TravelTimeInSeconds <= 0)
             {
                 return _cache.TryGetValue(cacheKey, out cached)
-                    ? AsStale(cached, "Aucun nouvel itinéraire HERE ; dernière mesure conservée.")
-                    : Unavailable(borderName, direction, label, "Aucun itinéraire HERE disponible.");
+                    ? AsStale(cached, "Aucun nouvel itinéraire TomTom ; dernière mesure conservée.")
+                    : Unavailable(borderName, direction, label, "Aucun itinéraire TomTom disponible.");
             }
 
-            var duration = summaries.Sum(x => Math.Max(0, x.Duration));
-            var baseDuration = summaries.Sum(x => Math.Max(0, x.BaseDuration));
-            var delaySeconds = Math.Max(0, duration - baseDuration);
+            var duration = summary.TravelTimeInSeconds;
+            var baseDuration = summary.NoTrafficTravelTimeInSeconds > 0
+                ? summary.NoTrafficTravelTimeInSeconds
+                : Math.Max(0, duration - summary.TrafficDelayInSeconds);
+            var delaySeconds = summary.TrafficDelayInSeconds > 0
+                ? summary.TrafficDelayInSeconds
+                : Math.Max(0, duration - baseDuration);
             var delayMinutes = (int)Math.Ceiling(delaySeconds / 60d);
             var trend = "Stable";
             if (_cache.TryGetValue(cacheKey, out var previous) && previous.Value.DelayMinutes is int previousDelay)
@@ -234,6 +253,7 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
                         : "Stable";
             }
 
+            var now = DateTime.UtcNow;
             var result = new DirectionalTrafficDto
             {
                 BorderPointName = borderName,
@@ -245,25 +265,25 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
                 DelayMinutes = delayMinutes,
                 CongestionLevel = delayMinutes >= 15 ? "Red" : delayMinutes >= 7 ? "Orange" : "Green",
                 Trend = trend,
-                SourceName = "HERE Traffic",
-                ObservedAtUtc = DateTime.UtcNow,
+                SourceName = "TomTom Traffic",
+                ObservedAtUtc = now,
                 IsStale = false,
                 AgeMinutes = 0,
                 ConfidencePercent = 85
             };
 
-            _cache[cacheKey] = new CacheEntry(DateTime.UtcNow, result);
+            _cache[cacheKey] = new CacheEntry(now, result);
             return result;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidDataException)
         {
-            _logger.LogWarning(ex, "HERE route request unavailable for {Border}/{Direction}.", borderName, direction);
+            _logger.LogWarning(ex, "TomTom route request unavailable for {Border}/{Direction}.", borderName, direction);
             if (_cache.TryGetValue(cacheKey, out cached))
             {
-                return AsStale(cached, "HERE est indisponible ; dernière mesure conservée.");
+                return AsStale(cached, "TomTom est indisponible ; dernière mesure conservée.");
             }
 
-            return Unavailable(borderName, direction, label, "Service HERE temporairement indisponible.");
+            return Unavailable(borderName, direction, label, "Service TomTom temporairement indisponible.");
         }
     }
 
@@ -274,7 +294,7 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
             Direction = direction,
             DirectionLabel = label,
             IsAvailable = false,
-            SourceName = "HERE Traffic",
+            SourceName = "TomTom Traffic",
             ConfidencePercent = 0,
             Trend = "Unknown",
             UnavailableReason = reason
@@ -290,21 +310,24 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
                 direction,
                 label,
                 _options.Enabled
-                    ? "Première collecte HERE en attente."
-                    : "Clé HERE non configurée.");
+                    ? "Première collecte TomTom en attente."
+                    : "Clé TomTom non configurée.");
         }
 
         var age = DateTime.UtcNow - cached.StoredAtUtc;
-        var freshness = TimeSpan.FromSeconds(Math.Clamp(_options.CacheSeconds, 1800, 3600));
+        var freshness = CacheDuration();
         if (age > TimeSpan.FromTicks(freshness.Ticks * 4))
         {
-            return Unavailable(border, direction, label, "Dernière mesure HERE trop ancienne.");
+            return Unavailable(border, direction, label, "Dernière mesure TomTom trop ancienne.");
         }
 
         return age <= freshness
             ? cached.Value
-            : AsStale(cached, "Mesure HERE en retard d’actualisation.");
+            : AsStale(cached, "Mesure TomTom en retard d’actualisation.");
     }
+
+    private TimeSpan CacheDuration() =>
+        TimeSpan.FromSeconds(Math.Clamp(_options.CacheSeconds, 1800, 3600));
 
     private static DirectionalTrafficDto AsStale(CacheEntry cached, string reason)
     {
@@ -335,50 +358,54 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
         {
             try
             {
-                var today = DateOnly.FromDateTime(DateTime.UtcNow);
-                var statePath = _budgetStatePath;
-                var requestsToday = 0;
+                var now = DateTime.UtcNow;
+                var month = new DateOnly(now.Year, now.Month, 1);
+                var requestsThisMonth = 0;
 
-                if (File.Exists(statePath))
+                if (File.Exists(_budgetStatePath))
                 {
-                    var parts = File.ReadAllText(statePath).Trim().Split('|', 2);
+                    var parts = File.ReadAllText(_budgetStatePath).Trim().Split('|', 2);
                     if (parts.Length != 2
-                        || !DateOnly.TryParseExact(parts[0], "yyyy-MM-dd", CultureInfo.InvariantCulture,
-                            DateTimeStyles.None, out var storedDate)
+                        || !DateOnly.TryParseExact(
+                            parts[0],
+                            "yyyy-MM-dd",
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.None,
+                            out var storedMonth)
                         || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var storedCount)
                         || storedCount < 0)
                     {
-                        _logger.LogError("HERE budget state is invalid; requests are blocked.");
+                        _logger.LogError("TomTom budget state is invalid; requests are blocked.");
                         return false;
                     }
 
-                    if (storedDate == today)
+                    if (storedMonth == month)
                     {
-                        requestsToday = storedCount;
+                        requestsThisMonth = storedCount;
                     }
                 }
 
-                var limit = Math.Clamp(_options.MaxRequestsPerDay, 14, 600);
-                if (requestsToday >= limit)
+                var limit = Math.Clamp(_options.MaxRequestsPerMonth, 14, 20000);
+                if (requestsThisMonth >= limit)
                 {
                     return false;
                 }
 
-                var directory = Path.GetDirectoryName(statePath);
+                var directory = Path.GetDirectoryName(_budgetStatePath);
                 if (!string.IsNullOrWhiteSpace(directory))
                 {
                     Directory.CreateDirectory(directory);
                 }
 
                 File.WriteAllText(
-                    statePath,
-                    $"{today:yyyy-MM-dd}|{requestsToday + 1}",
+                    _budgetStatePath,
+                    $"{month:yyyy-MM-dd}|{requestsThisMonth + 1}",
                     System.Text.Encoding.UTF8);
                 return true;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                _logger.LogError(ex, "HERE budget state cannot be persisted; requests are blocked.");
+                _logger.LogError(ex, "TomTom budget state cannot be persisted; requests are blocked.");
                 return false;
             }
         }
@@ -386,30 +413,27 @@ public sealed class HereDirectionalTrafficService : IDirectionalTrafficService
 
     private sealed record CacheEntry(DateTime StoredAtUtc, DirectionalTrafficDto Value);
 
-    private sealed class HereRoutesResponse
+    internal sealed class TomTomRoutesResponse
     {
         [JsonPropertyName("routes")]
-        public List<HereRoute> Routes { get; set; } = new();
+        public List<TomTomRoute> Routes { get; set; } = [];
     }
 
-    private sealed class HereRoute
-    {
-        [JsonPropertyName("sections")]
-        public List<HereSection> Sections { get; set; } = new();
-    }
-
-    private sealed class HereSection
+    internal sealed class TomTomRoute
     {
         [JsonPropertyName("summary")]
-        public HereSummary? Summary { get; set; }
+        public TomTomSummary? Summary { get; set; }
     }
 
-    private sealed class HereSummary
+    internal sealed class TomTomSummary
     {
-        [JsonPropertyName("duration")]
-        public int Duration { get; set; }
+        [JsonPropertyName("travelTimeInSeconds")]
+        public int TravelTimeInSeconds { get; set; }
 
-        [JsonPropertyName("baseDuration")]
-        public int BaseDuration { get; set; }
+        [JsonPropertyName("trafficDelayInSeconds")]
+        public int TrafficDelayInSeconds { get; set; }
+
+        [JsonPropertyName("noTrafficTravelTimeInSeconds")]
+        public int NoTrafficTravelTimeInSeconds { get; set; }
     }
 }

@@ -1,6 +1,6 @@
 namespace FrontiereLiveGe.Api.Dtos;
 
-public sealed class HereHistoryDto
+public sealed class TrafficHistoryDto
 {
     public int Id { get; set; }
     public string BorderPointName { get; set; } = string.Empty;
