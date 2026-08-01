@@ -102,4 +102,37 @@ public sealed class GenevaRoadworksProviderTests
 
         Assert.Contains("features", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Parse_AcceptsUppercaseMapServerProperties()
+    {
+        const string geoJson =
+            """
+            {
+              "type": "FeatureCollection",
+              "features": [{
+                "type": "Feature",
+                "geometry": { "type": "Point", "coordinates": [6.1279, 46.1406] },
+                "properties": {
+                  "OBJECTID": 21,
+                  "DATE_DEBUT": "20260701",
+                  "DATE_FIN": "20260801",
+                  "ADRESSE": "Route de Bardonnex",
+                  "PERTURBATION": "Circulation alternée",
+                  "MOA": "État de Genève",
+                  "FICHE_INFO": null
+                }
+              }]
+            }
+            """;
+
+        using var document = JsonDocument.Parse(geoJson);
+
+        var result = GenevaRoadworksProvider.Parse(document.RootElement, CheckedAtUtc);
+
+        var signal = Assert.Single(result.Signals);
+        Assert.Equal("sitg:21", signal.Id);
+        Assert.Equal("Route de Bardonnex", signal.Title);
+        Assert.Equal("Warning", signal.Severity);
+    }
 }

@@ -7,6 +7,8 @@ namespace FrontiereLiveGe.Api.Services.PublicData;
 
 public sealed partial class GenevaRoadworksProvider : CachedPublicDataProvider
 {
+    private const string MapServerFallbackUrl =
+        "https://vector.sitg.ge.ch/arcgis/rest/services/INFOMOB_CHANTIER_POINT/MapServer/0/";
     private const string Query =
         "query?where=1%3D1" +
         "&outFields=objectid,date_debut,date_fin,adresse,type,fiche_info,perturbation,impact_global,label_pcm,moa" +
@@ -35,7 +37,28 @@ public sealed partial class GenevaRoadworksProvider : CachedPublicDataProvider
     protected override async Task<PublicDataSnapshot> FetchFreshAsync(DateTime checkedAtUtc, CancellationToken ct)
     {
         var client = _httpClientFactory.CreateClient("GenevaRoadworks");
-        using var response = await client.GetAsync(Query, HttpCompletionOption.ResponseHeadersRead, ct);
+        try
+        {
+            return await FetchFromEndpointAsync(client, Query, checkedAtUtc, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "The SITG FeatureServer endpoint failed; trying the MapServer endpoint.");
+            return await FetchFromEndpointAsync(
+                client,
+                $"{MapServerFallbackUrl}{Query}",
+                checkedAtUtc,
+                ct);
+        }
+    }
+
+    private async Task<PublicDataSnapshot> FetchFromEndpointAsync(
+        HttpClient client,
+        string requestUrl,
+        DateTime checkedAtUtc,
+        CancellationToken ct)
+    {
+        using var response = await client.GetAsync(requestUrl, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
 
         if (response.Content.Headers.ContentLength is > 2_000_000)
@@ -206,7 +229,7 @@ public sealed partial class GenevaRoadworksProvider : CachedPublicDataProvider
 
     private static string GetString(JsonElement properties, string name)
     {
-        if (!properties.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null)
+        if (!TryGetProperty(properties, name, out var value) || value.ValueKind == JsonValueKind.Null)
         {
             return string.Empty;
         }
@@ -218,12 +241,32 @@ public sealed partial class GenevaRoadworksProvider : CachedPublicDataProvider
 
     private static int? GetInt(JsonElement properties, string name)
     {
-        if (!properties.TryGetProperty(name, out var value))
+        if (!TryGetProperty(properties, name, out var value))
         {
             return null;
         }
 
         return value.TryGetInt32(out var number) ? number : null;
+    }
+
+    private static bool TryGetProperty(JsonElement properties, string name, out JsonElement value)
+    {
+        if (properties.TryGetProperty(name, out value))
+        {
+            return true;
+        }
+
+        foreach (var property in properties.EnumerateObject())
+        {
+            if (property.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     private static string Clean(string value, int maxLength)
