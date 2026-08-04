@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       maplibre-gl:
-        specifier: ^6.0.0
-        version: 6.0.0
+        specifier: ^6.1.0
+        version: 6.1.0
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -573,8 +573,8 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
-  maplibre-gl@6.0.0:
-    resolution: {integrity: sha512-1wBgEhzTZfA+cDpFdt0fM1mJA5mJ90fifORJ7D8JcKLJCvPT/iTx9bNxkP7DqEYde65DJd7gE7h83khwNRqdyg==}
+  maplibre-gl@6.1.0:
+    resolution: {integrity: sha512-vLRukjvbUai4SXW2/jKo8rPsw6YMXuA/b4fKFVSulZKFVRHkOvk4ZmNlDSVZpTYPV0/7/iTqq8ltYdyr764b7w==}
     engines: {node: '>=16.14.0', npm: '>=8.1.0'}
 
   minimist@1.2.8:
@@ -1169,7 +1169,7 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
-  maplibre-gl@6.0.0:
+  maplibre-gl@6.1.0:
     dependencies:
       '@mapbox/point-geometry': 1.1.0
       '@mapbox/tiny-sdf': 2.2.0
