@@ -86,4 +86,3 @@ dotnet user-secrets set "X:Enabled" "true" --project backend
 ```
 
 Recommended scopes: `tweet.read tweet.write users.read offline.access`.
-
